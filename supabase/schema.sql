@@ -36,7 +36,7 @@ create table public.categories (
 
 create table public.products (
   id uuid primary key default gen_random_uuid(),
-  supplier_id uuid not null references auth.users(id) on delete cascade,
+  supplier_id uuid not null references public.profiles(id) on delete cascade,
   category_id uuid references public.categories(id) on delete set null,
   name text not null,
   description text,
@@ -52,7 +52,7 @@ create table public.products (
 
 create table public.orders (
   id uuid primary key default gen_random_uuid(),
-  buyer_id uuid not null references auth.users(id) on delete cascade,
+  buyer_id uuid not null references public.profiles(id) on delete cascade,
   total numeric(12,2) not null,
   delivery_address text not null,
   phone text not null,
@@ -66,7 +66,7 @@ create table public.order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
   product_id uuid not null references public.products(id),
-  supplier_id uuid not null references auth.users(id),
+  supplier_id uuid not null references public.profiles(id),
   quantity integer not null check (quantity > 0),
   price numeric(12,2) not null,
   name text not null

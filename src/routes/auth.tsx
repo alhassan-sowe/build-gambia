@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter, useSearch } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,9 @@ function AuthPage() {
   const router = useRouter();
   const { redirect } = useSearch({ from: "/auth" });
   const { isAuthenticated } = useAuth();
-  if (isAuthenticated && typeof window !== "undefined") {
-    router.navigate({ to: redirect as any });
-  }
+  useEffect(() => {
+    if (isAuthenticated) router.navigate({ to: redirect as any });
+  }, [isAuthenticated, redirect, router]);
 
   return (
     <div className="min-h-screen bg-background">
