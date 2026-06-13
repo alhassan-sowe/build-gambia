@@ -15,8 +15,10 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProductsIdRouteImport } from './routes/products.$id'
+import { Route as AuthenticatedSupplierRouteImport } from './routes/_authenticated/supplier'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCartRouteImport } from './routes/_authenticated/cart'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 
 const ContactRoute = ContactRouteImport.update({
   id: '/contact',
@@ -47,6 +49,11 @@ const ProductsIdRoute = ProductsIdRouteImport.update({
   path: '/products/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSupplierRoute = AuthenticatedSupplierRouteImport.update({
+  id: '/supplier',
+  path: '/supplier',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -57,14 +64,21 @@ const AuthenticatedCartRoute = AuthenticatedCartRouteImport.update({
   path: '/cart',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/catalog': typeof CatalogRoute
   '/contact': typeof ContactRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/cart': typeof AuthenticatedCartRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/supplier': typeof AuthenticatedSupplierRoute
   '/products/$id': typeof ProductsIdRoute
 }
 export interface FileRoutesByTo {
@@ -72,8 +86,10 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/catalog': typeof CatalogRoute
   '/contact': typeof ContactRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/cart': typeof AuthenticatedCartRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/supplier': typeof AuthenticatedSupplierRoute
   '/products/$id': typeof ProductsIdRoute
 }
 export interface FileRoutesById {
@@ -83,8 +99,10 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/catalog': typeof CatalogRoute
   '/contact': typeof ContactRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/cart': typeof AuthenticatedCartRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/supplier': typeof AuthenticatedSupplierRoute
   '/products/$id': typeof ProductsIdRoute
 }
 export interface FileRouteTypes {
@@ -94,8 +112,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/catalog'
     | '/contact'
+    | '/admin'
     | '/cart'
     | '/dashboard'
+    | '/supplier'
     | '/products/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -103,8 +123,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/catalog'
     | '/contact'
+    | '/admin'
     | '/cart'
     | '/dashboard'
+    | '/supplier'
     | '/products/$id'
   id:
     | '__root__'
@@ -113,8 +135,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/catalog'
     | '/contact'
+    | '/_authenticated/admin'
     | '/_authenticated/cart'
     | '/_authenticated/dashboard'
+    | '/_authenticated/supplier'
     | '/products/$id'
   fileRoutesById: FileRoutesById
 }
@@ -171,6 +195,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/supplier': {
+      id: '/_authenticated/supplier'
+      path: '/supplier'
+      fullPath: '/supplier'
+      preLoaderRoute: typeof AuthenticatedSupplierRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -185,17 +216,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCartRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedCartRoute: typeof AuthenticatedCartRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedSupplierRoute: typeof AuthenticatedSupplierRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedCartRoute: AuthenticatedCartRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedSupplierRoute: AuthenticatedSupplierRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
