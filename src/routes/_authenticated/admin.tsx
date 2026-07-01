@@ -1,174 +1,177 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Navbar, Footer } from "@/components/navbar";
+import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { OrderStatusBadge } from "@/components/order-status-badge";
+import { EmptyState } from "@/components/empty-state";
+import { useAuth } from "@/lib/use-auth";
+import { listAllProfiles, setUserRole, listAllProducts } from "@/lib/profiles.functions";
+import { listCategories, createCategory, deleteCategory } from "@/lib/categories.functions";
+import { deleteProduct, toggleProductActive } from "@/lib/products.functions";
+import { listAllOrders } from "@/lib/orders.functions";
+import { formatGMD } from "@/lib/cart";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
-import { formatGMD } from "@/hooks/use-cart";
-import { statusColor } from "@/lib/status";
+import type { AppRole } from "@/lib/types";
 
 export const Route = createFileRoute("/_authenticated/admin")({
-  component: AdminPage,
+  beforeLoad: async () => {
+    const { data: u } = await supabase.auth.getUser();
+    if (!u.user) throw redirect({ to: "/auth" });
+    const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", u.user.id);
+    const isAdmin = (roles || []).some((r: any) => r.role === "ADMIN");
+    if (!isAdmin) throw redirect({ to: "/" });
+  },
+  component: AdminDashboard,
 });
 
-function AdminPage() {
-  const { hasRole, loading } = useAuth();
-  if (loading) return <div className="p-10 text-center text-muted-foreground">Loading…</div>;
-  if (!hasRole("admin")) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <div className="container mx-auto max-w-md px-4 py-20 text-center">
-          <h1 className="text-2xl font-bold">Admins only</h1>
-          <p className="mt-2 text-muted-foreground">You don't have access to this area.</p>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
+function AdminDashboard() {
+  const { profile } = useAuth();
+  if (!profile) return <div className="container mx-auto px-4 py-8">Loading…</div>;
+
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      <div className="container mx-auto px-4 py-10">
-        <h1 className="text-3xl font-bold tracking-tight">Admin</h1>
-        <Tabs defaultValue="orders" className="mt-8">
-          <TabsList>
-            <TabsTrigger value="orders">All orders</TabsTrigger>
-            <TabsTrigger value="users">Users & roles</TabsTrigger>
-            <TabsTrigger value="categories">Categories</TabsTrigger>
-          </TabsList>
-          <TabsContent value="orders"><AdminOrders /></TabsContent>
-          <TabsContent value="users"><AdminUsers /></TabsContent>
-          <TabsContent value="categories"><AdminCategories /></TabsContent>
-        </Tabs>
-      </div>
-      <Footer />
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold">Admin dashboard</h1>
+      <Tabs defaultValue="users" className="mt-6">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="categories">Categories</TabsTrigger>
+          <TabsTrigger value="products">Products</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
+        </TabsList>
+        <TabsContent value="users" className="mt-6"><UsersTab /></TabsContent>
+        <TabsContent value="categories" className="mt-6"><CategoriesTab /></TabsContent>
+        <TabsContent value="products" className="mt-6"><ProductsTab /></TabsContent>
+        <TabsContent value="orders" className="mt-6"><OrdersTab /></TabsContent>
+      </Tabs>
     </div>
   );
 }
 
-function AdminOrders() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin-orders"],
-    queryFn: async () => (await supabase.from("orders").select("*, order_items(*), profiles!orders_buyer_id_fkey(name)").order("created_at", { ascending: false })).data ?? [],
+function UsersTab() {
+  const qc = useQueryClient();
+  const { data: users = [] } = useQuery({ queryKey: ["all-profiles"], queryFn: () => listAllProfiles() });
+  const mut = useMutation({
+    mutationFn: (v: { id: string; role: AppRole }) => setUserRole({ data: v }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["all-profiles"] }); toast.success("Role updated"); },
+    onError: (e: any) => toast.error(e.message),
   });
   return (
-    <div className="mt-6 space-y-3">
-      {isLoading && <Skeleton className="h-32" />}
-      {(data ?? []).map((o: any) => (
-        <Card key={o.id}>
-          <CardContent className="p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div className="text-xs text-muted-foreground">#{o.id.slice(0, 8)} · {o.profiles?.name} · {new Date(o.created_at).toLocaleDateString()}</div>
-                <div className="text-lg font-semibold">{formatGMD(Number(o.total))}</div>
-              </div>
-              <Badge className={statusColor(o.status)}>{o.status}</Badge>
-            </div>
-            <div className="mt-3 text-sm text-muted-foreground">{o.delivery_address} · {o.phone}</div>
-          </CardContent>
+    <div className="space-y-3">
+      {users.map((u: any) => (
+        <Card key={u.id} className="p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="font-medium">{u.name || "—"}</div>
+            <div className="text-sm text-muted-foreground">{u.email}</div>
+          </div>
+          <Select value={u.role} onValueChange={(v) => mut.mutate({ id: u.id, role: v as AppRole })}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="BUYER">Buyer</SelectItem>
+              <SelectItem value="SUPPLIER">Supplier</SelectItem>
+              <SelectItem value="ADMIN">Admin</SelectItem>
+            </SelectContent>
+          </Select>
         </Card>
       ))}
     </div>
   );
 }
 
-function AdminUsers() {
+function CategoriesTab() {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin-users"],
-    queryFn: async () => {
-      const { data: profiles } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
-      const { data: roles } = await supabase.from("user_roles").select("*");
-      return (profiles ?? []).map((p: any) => ({ ...p, roles: (roles ?? []).filter((r: any) => r.user_id === p.id).map((r: any) => r.role) }));
-    },
-  });
-
-  async function toggleRole(userId: string, role: string, has: boolean) {
-    if (has) {
-      const { error } = await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", role);
-      if (error) return toast.error(error.message);
-    } else {
-      const { error } = await supabase.from("user_roles").insert({ user_id: userId, role });
-      if (error) return toast.error(error.message);
-    }
-    toast.success("Role updated");
-    qc.invalidateQueries({ queryKey: ["admin-users"] });
-  }
-
-  return (
-    <div className="mt-6 space-y-3">
-      {isLoading && <Skeleton className="h-32" />}
-      {(data ?? []).map((u: any) => (
-        <Card key={u.id}>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-            <div>
-              <div className="font-medium">{u.name ?? "—"}</div>
-              <div className="text-xs text-muted-foreground">{u.email} · {u.location ?? "—"}</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(["buyer", "supplier", "admin"] as const).map((r) => (
-                <Button key={r} variant={u.roles.includes(r) ? "default" : "outline"} size="sm" onClick={() => toggleRole(u.id, r, u.roles.includes(r))}>
-                  {r}
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function AdminCategories() {
-  const qc = useQueryClient();
+  const { data: cats = [] } = useQuery({ queryKey: ["categories"], queryFn: () => listCategories() });
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
-  const { data, isLoading } = useQuery({ queryKey: ["categories"], queryFn: async () => (await supabase.from("categories").select("*").order("name")).data ?? [] });
+  const [open, setOpen] = useState(false);
+  const add = useMutation({
+    mutationFn: () => createCategory({ data: { name, description: desc || null } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["categories"] }); toast.success("Added"); setName(""); setDesc(""); setOpen(false); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const del = useMutation({
+    mutationFn: (id: string) => deleteCategory({ data: { id } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["categories"] }); toast.success("Deleted"); },
+    onError: (e: any) => toast.error(e.message),
+  });
   return (
-    <div className="mt-6 grid gap-6 md:grid-cols-2">
-      <Card>
-        <CardContent className="space-y-3 p-5">
-          <h3 className="font-semibold">Add category</h3>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
-          <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description" />
-          <Button
-            onClick={async () => {
-              if (!name) return;
-              const { error } = await supabase.from("categories").insert({ name, description: desc });
-              if (error) toast.error(error.message); else { toast.success("Added"); setName(""); setDesc(""); qc.invalidateQueries({ queryKey: ["categories"] }); }
-            }}
-          >Add</Button>
-        </CardContent>
-      </Card>
-      <div className="space-y-2">
-        {isLoading && <Skeleton className="h-32" />}
-        {(data ?? []).map((c: any) => (
-          <Card key={c.id}>
-            <CardContent className="flex items-center justify-between p-4">
-              <div>
-                <div className="font-medium">{c.name}</div>
-                <div className="text-xs text-muted-foreground">{c.description}</div>
-              </div>
-              <Button
-                size="sm" variant="ghost" className="text-destructive"
-                onClick={async () => {
-                  if (!confirm("Delete category?")) return;
-                  const { error } = await supabase.from("categories").delete().eq("id", c.id);
-                  if (error) toast.error(error.message); else { toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["categories"] }); }
-                }}
-              >Delete</Button>
-            </CardContent>
+    <div>
+      <div className="flex justify-end mb-4">
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild><Button>Add category</Button></DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>New category</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div><Label>Description</Label><Input value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
+              <Button onClick={() => add.mutate()} disabled={!name} className="w-full">Save</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+      <div className="grid gap-2">
+        {cats.map((c: any) => (
+          <Card key={c.id} className="p-3 flex items-center justify-between">
+            <div><div className="font-medium">{c.name}</div><div className="text-sm text-muted-foreground">{c.description}</div></div>
+            <Button size="sm" variant="ghost" onClick={() => { if (confirm("Delete category?")) del.mutate(c.id); }}>Delete</Button>
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ProductsTab() {
+  const qc = useQueryClient();
+  const { data: products = [] } = useQuery({ queryKey: ["all-products"], queryFn: () => listAllProducts() });
+  const toggle = useMutation({
+    mutationFn: (v: { id: string; is_active: boolean }) => toggleProductActive({ data: v }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["all-products"] }); toast.success("Updated"); },
+  });
+  const del = useMutation({
+    mutationFn: (id: string) => deleteProduct({ data: { id } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["all-products"] }); toast.success("Deleted"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  return (
+    <div className="space-y-3">
+      {products.map((p: any) => (
+        <Card key={p.id} className="p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="font-medium">{p.name}</div>
+            <div className="text-sm text-muted-foreground">{p.supplier_name} · {p.category_name} · {formatGMD(Number(p.price))} / {p.unit}</div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2"><Switch checked={p.is_active} onCheckedChange={(v) => toggle.mutate({ id: p.id, is_active: v })} /><span className="text-sm">Active</span></div>
+            <Button size="sm" variant="ghost" onClick={() => { if (confirm("Delete product?")) del.mutate(p.id); }}>Delete</Button>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function OrdersTab() {
+  const { data: orders = [] } = useQuery({ queryKey: ["all-orders"], queryFn: () => listAllOrders() });
+  if (orders.length === 0) return <EmptyState title="No orders yet" />;
+  return (
+    <div className="space-y-3">
+      {orders.map((o: any) => (
+        <Card key={o.id} className="p-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="text-sm">#{o.id.slice(0, 8)} · {o.buyer_name} · {formatGMD(Number(o.total))}</div>
+            <OrderStatusBadge status={o.status} />
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">{new Date(o.created_at).toLocaleString()} · {o.delivery_address}</div>
+        </Card>
+      ))}
     </div>
   );
 }
