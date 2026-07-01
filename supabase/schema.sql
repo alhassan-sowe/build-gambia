@@ -1,185 +1,188 @@
--- =============================================================
--- Envora — Supabase schema. Run this in your Supabase SQL editor.
--- Then, in Storage, create a PUBLIC bucket named `product-images`
--- and run the policies at the bottom of this file.
--- =============================================================
+-- Envora schema (uppercase enums, profiles.role + is_active mirrored to user_roles)
 
-create type app_role as enum ('buyer','supplier','admin');
-create type order_status as enum ('pending','confirmed','delivering','delivered','canceled');
+CREATE TYPE public.app_role AS ENUM ('BUYER', 'SUPPLIER', 'ADMIN');
+CREATE TYPE public.order_status AS ENUM ('PENDING', 'CONFIRMED', 'DELIVERING', 'DELIVERED', 'CANCELED');
 
-create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text,
-  name text,
-  phone text,
-  location text,
-  created_at timestamptz default now()
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
+
+CREATE TABLE public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT, name TEXT, phone TEXT, location TEXT,
+  role public.app_role NOT NULL DEFAULT 'BUYER',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+GRANT SELECT ON public.profiles TO anon;
+GRANT ALL ON public.profiles TO service_role;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
-create table public.user_roles (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  role app_role not null,
-  unique(user_id, role)
+CREATE TABLE public.user_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role public.app_role NOT NULL,
+  UNIQUE(user_id, role)
 );
+GRANT SELECT ON public.user_roles TO authenticated;
+GRANT ALL ON public.user_roles TO service_role;
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 
-create or replace function public.has_role(_user_id uuid, _role app_role)
-returns boolean language sql stable security definer set search_path = public as $$
-  select exists(select 1 from public.user_roles where user_id=_user_id and role=_role)
+CREATE OR REPLACE FUNCTION public.has_role(_user_id UUID, _role public.app_role)
+RETURNS BOOLEAN LANGUAGE SQL STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = _user_id AND role = _role)
 $$;
 
-create table public.categories (
-  id uuid primary key default gen_random_uuid(),
-  name text not null unique,
-  description text
+CREATE TABLE public.categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+GRANT SELECT ON public.categories TO anon, authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.categories TO authenticated;
+GRANT ALL ON public.categories TO service_role;
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE public.products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  price NUMERIC(12,2) NOT NULL DEFAULT 0,
+  unit TEXT NOT NULL DEFAULT 'piece',
+  stock INTEGER NOT NULL DEFAULT 0,
+  image_url TEXT,
+  location TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  supplier_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES public.categories(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER products_updated_at BEFORE UPDATE ON public.products
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+GRANT SELECT ON public.products TO anon, authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.products TO authenticated;
+GRANT ALL ON public.products TO service_role;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE public.orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  buyer_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  total NUMERIC(12,2) NOT NULL DEFAULT 0,
+  delivery_address TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  notes TEXT,
+  status public.order_status NOT NULL DEFAULT 'PENDING',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER orders_updated_at BEFORE UPDATE ON public.orders
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+GRANT SELECT, INSERT, UPDATE ON public.orders TO authenticated;
+GRANT ALL ON public.orders TO service_role;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE public.order_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE RESTRICT,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  price NUMERIC(12,2) NOT NULL
+);
+GRANT SELECT, INSERT ON public.order_items TO authenticated;
+GRANT ALL ON public.order_items TO service_role;
+ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.order_belongs_to_supplier(_order_id UUID, _user_id UUID)
+RETURNS BOOLEAN LANGUAGE SQL STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.order_items oi
+    JOIN public.products p ON p.id = oi.product_id
+    WHERE oi.order_id = _order_id AND p.supplier_id = _user_id
+  )
+$$;
+
+-- RLS: profiles
+CREATE POLICY "Profiles viewable by everyone" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Users insert own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Admins update any profile" ON public.profiles FOR UPDATE USING (public.has_role(auth.uid(), 'ADMIN'));
+
+-- RLS: user_roles
+CREATE POLICY "View own roles" ON public.user_roles FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Admins view all roles" ON public.user_roles FOR SELECT USING (public.has_role(auth.uid(), 'ADMIN'));
+CREATE POLICY "Admins manage roles" ON public.user_roles FOR ALL USING (public.has_role(auth.uid(), 'ADMIN')) WITH CHECK (public.has_role(auth.uid(), 'ADMIN'));
+
+-- RLS: categories
+CREATE POLICY "Categories viewable by everyone" ON public.categories FOR SELECT USING (true);
+CREATE POLICY "Admins manage categories" ON public.categories FOR ALL USING (public.has_role(auth.uid(), 'ADMIN')) WITH CHECK (public.has_role(auth.uid(), 'ADMIN'));
+
+-- RLS: products
+CREATE POLICY "Active products viewable" ON public.products FOR SELECT USING (is_active = true OR auth.uid() = supplier_id OR public.has_role(auth.uid(), 'ADMIN'));
+CREATE POLICY "Suppliers insert own products" ON public.products FOR INSERT WITH CHECK (auth.uid() = supplier_id AND public.has_role(auth.uid(), 'SUPPLIER'));
+CREATE POLICY "Suppliers update own products" ON public.products FOR UPDATE USING (auth.uid() = supplier_id);
+CREATE POLICY "Suppliers delete own products" ON public.products FOR DELETE USING (auth.uid() = supplier_id);
+CREATE POLICY "Admins manage all products" ON public.products FOR ALL USING (public.has_role(auth.uid(), 'ADMIN')) WITH CHECK (public.has_role(auth.uid(), 'ADMIN'));
+
+-- RLS: orders
+CREATE POLICY "Buyers view own orders" ON public.orders FOR SELECT USING (auth.uid() = buyer_id);
+CREATE POLICY "Suppliers view orders w/ their products" ON public.orders FOR SELECT USING (public.order_belongs_to_supplier(id, auth.uid()));
+CREATE POLICY "Admins view all orders" ON public.orders FOR SELECT USING (public.has_role(auth.uid(), 'ADMIN'));
+CREATE POLICY "Buyers create own orders" ON public.orders FOR INSERT WITH CHECK (auth.uid() = buyer_id);
+CREATE POLICY "Suppliers update orders for their products" ON public.orders FOR UPDATE USING (public.order_belongs_to_supplier(id, auth.uid()));
+CREATE POLICY "Admins update any order" ON public.orders FOR UPDATE USING (public.has_role(auth.uid(), 'ADMIN'));
+
+-- RLS: order_items
+CREATE POLICY "Buyers view own order items" ON public.order_items FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.orders o WHERE o.id = order_id AND o.buyer_id = auth.uid())
+);
+CREATE POLICY "Suppliers view items for their products" ON public.order_items FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.products p WHERE p.id = product_id AND p.supplier_id = auth.uid())
+);
+CREATE POLICY "Admins view all order items" ON public.order_items FOR SELECT USING (public.has_role(auth.uid(), 'ADMIN'));
+CREATE POLICY "Buyers create items for own orders" ON public.order_items FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM public.orders o WHERE o.id = order_id AND o.buyer_id = auth.uid())
 );
 
-create table public.products (
-  id uuid primary key default gen_random_uuid(),
-  supplier_id uuid not null references public.profiles(id) on delete cascade,
-  category_id uuid references public.categories(id) on delete set null,
-  name text not null,
-  description text,
-  price numeric(12,2) not null check (price >= 0),
-  unit text not null default 'unit',
-  stock integer not null default 0 check (stock >= 0),
-  image_url text,
-  location text,
-  is_active boolean not null default true,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-create table public.orders (
-  id uuid primary key default gen_random_uuid(),
-  buyer_id uuid not null references public.profiles(id) on delete cascade,
-  total numeric(12,2) not null,
-  delivery_address text not null,
-  phone text not null,
-  notes text,
-  status order_status not null default 'pending',
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-create table public.order_items (
-  id uuid primary key default gen_random_uuid(),
-  order_id uuid not null references public.orders(id) on delete cascade,
-  product_id uuid not null references public.products(id),
-  supplier_id uuid not null references public.profiles(id),
-  quantity integer not null check (quantity > 0),
-  price numeric(12,2) not null,
-  name text not null
-);
-
--- Auto-create profile + default role on signup
-create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer set search_path=public as $$
-begin
-  insert into public.profiles(id, email, name, phone, location)
-  values (
-    new.id,
-    new.email,
-    coalesce(new.raw_user_meta_data->>'name', split_part(new.email,'@',1)),
-    new.raw_user_meta_data->>'phone',
-    new.raw_user_meta_data->>'location'
+-- Signup trigger
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_role public.app_role;
+BEGIN
+  v_role := COALESCE(NULLIF(NEW.raw_user_meta_data->>'role','')::public.app_role, 'BUYER');
+  INSERT INTO public.profiles (id, email, name, phone, location, role, is_active)
+  VALUES (
+    NEW.id, NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'name', ''),
+    COALESCE(NEW.raw_user_meta_data->>'phone', ''),
+    COALESCE(NEW.raw_user_meta_data->>'location', ''),
+    v_role, true
   );
-  insert into public.user_roles(user_id, role)
-  values (new.id, coalesce((new.raw_user_meta_data->>'role')::app_role, 'buyer'));
-  return new;
-end$$;
+  INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, v_role) ON CONFLICT DO NOTHING;
+  RETURN NEW;
+END; $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute function public.handle_new_user();
-
--- Grants
-grant usage on schema public to anon, authenticated;
-grant select on public.categories to anon, authenticated;
-grant insert, update, delete on public.categories to authenticated;
-grant select on public.products to anon, authenticated;
-grant insert, update, delete on public.products to authenticated;
-grant select, insert, update, delete on public.orders to authenticated;
-grant select, insert, update, delete on public.order_items to authenticated;
-grant select, insert, update on public.profiles to authenticated;
-grant select, insert, update, delete on public.user_roles to authenticated;
-grant all on all tables in schema public to service_role;
-
--- RLS
-alter table public.profiles enable row level security;
-alter table public.user_roles enable row level security;
-alter table public.categories enable row level security;
-alter table public.products enable row level security;
-alter table public.orders enable row level security;
-alter table public.order_items enable row level security;
-
-create policy "profiles_select" on public.profiles for select
-  using (auth.uid() = id or public.has_role(auth.uid(),'admin'));
-create policy "profiles_insert" on public.profiles for insert
-  with check (auth.uid() = id);
-create policy "profiles_update" on public.profiles for update
-  using (auth.uid() = id or public.has_role(auth.uid(),'admin'));
-
-create policy "user_roles_select" on public.user_roles for select
-  using (auth.uid() = user_id or public.has_role(auth.uid(),'admin'));
-create policy "user_roles_admin_all" on public.user_roles for all
-  using (public.has_role(auth.uid(),'admin'))
-  with check (public.has_role(auth.uid(),'admin'));
-create policy "user_roles_self_insert" on public.user_roles for insert
-  with check (auth.uid() = user_id);
-
-create policy "categories_public_read" on public.categories for select using (true);
-create policy "categories_admin_write" on public.categories for all
-  using (public.has_role(auth.uid(),'admin'))
-  with check (public.has_role(auth.uid(),'admin'));
-
-create policy "products_public_read" on public.products for select
-  using (is_active = true or supplier_id = auth.uid() or public.has_role(auth.uid(),'admin'));
-create policy "products_supplier_insert" on public.products for insert
-  with check (supplier_id = auth.uid());
-create policy "products_supplier_update" on public.products for update
-  using (supplier_id = auth.uid() or public.has_role(auth.uid(),'admin'));
-create policy "products_supplier_delete" on public.products for delete
-  using (supplier_id = auth.uid() or public.has_role(auth.uid(),'admin'));
-
-create policy "orders_select" on public.orders for select
-  using (
-    buyer_id = auth.uid()
-    or public.has_role(auth.uid(),'admin')
-    or exists (select 1 from public.order_items oi where oi.order_id = orders.id and oi.supplier_id = auth.uid())
-  );
-create policy "orders_buyer_insert" on public.orders for insert
-  with check (buyer_id = auth.uid());
-create policy "orders_update" on public.orders for update
-  using (
-    buyer_id = auth.uid()
-    or public.has_role(auth.uid(),'admin')
-    or exists (select 1 from public.order_items oi where oi.order_id = orders.id and oi.supplier_id = auth.uid())
-  );
-
-create policy "order_items_select" on public.order_items for select
-  using (
-    supplier_id = auth.uid()
-    or public.has_role(auth.uid(),'admin')
-    or exists (select 1 from public.orders o where o.id = order_id and o.buyer_id = auth.uid())
-  );
-create policy "order_items_insert" on public.order_items for insert
-  with check (exists (select 1 from public.orders o where o.id = order_id and o.buyer_id = auth.uid()));
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- Seed categories
-insert into public.categories(name, description) values
-  ('Cement','Bags of cement'),
-  ('Sand','Building sand'),
-  ('Blocks','Concrete blocks & bricks'),
-  ('Gravel','Aggregate & gravel'),
-  ('Iron Rods','Steel reinforcement'),
-  ('Tiles','Floor & wall tiles'),
-  ('Transport','Material delivery & haulage')
-on conflict (name) do nothing;
+INSERT INTO public.categories (name, description) VALUES
+  ('Cement', 'Bags of cement for construction'),
+  ('Sand', 'Building sand by the ton'),
+  ('Blocks', 'Concrete and cement blocks'),
+  ('Gravel', 'Aggregate gravel and stone'),
+  ('Iron Rods', 'Steel reinforcement bars'),
+  ('Tiles', 'Floor and wall tiles'),
+  ('Transport', 'Delivery and transport services')
+ON CONFLICT (name) DO NOTHING;
 
--- ===== Storage policies (run AFTER creating PUBLIC bucket "product-images") =====
--- create policy "product_images_public_read" on storage.objects for select using (bucket_id = 'product-images');
--- create policy "product_images_auth_insert" on storage.objects for insert with check (bucket_id = 'product-images' and auth.uid() is not null);
--- create policy "product_images_owner_update" on storage.objects for update using (bucket_id = 'product-images' and owner = auth.uid());
--- create policy "product_images_owner_delete" on storage.objects for delete using (bucket_id = 'product-images' and owner = auth.uid());
+-- Storage: create a PUBLIC bucket named "product-images" in the dashboard, then run:
+-- CREATE POLICY "Product images public read" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
+-- CREATE POLICY "Auth upload product images" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'product-images');
+-- CREATE POLICY "Owners update product images" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'product-images' AND owner = auth.uid());
+-- CREATE POLICY "Owners delete product images" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'product-images' AND owner = auth.uid());

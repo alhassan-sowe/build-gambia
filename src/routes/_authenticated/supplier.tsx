@@ -1,313 +1,248 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plus, ImagePlus } from "lucide-react";
-import { Navbar, Footer } from "@/components/navbar";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { OrderStatusBadge } from "@/components/order-status-badge";
+import { EmptyState } from "@/components/empty-state";
+import { useAuth } from "@/lib/use-auth";
+import { listMyProducts, createProduct, updateProduct, deleteProduct } from "@/lib/products.functions";
+import { listCategories } from "@/lib/categories.functions";
+import { listSupplierOrders, updateOrderStatus } from "@/lib/orders.functions";
+import { updateMyProfile } from "@/lib/profiles.functions";
+import { formatGMD } from "@/lib/cart";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
-import { formatGMD } from "@/hooks/use-cart";
-import { statusColor } from "@/lib/status";
+import type { OrderStatus } from "@/lib/types";
 
-export const Route = createFileRoute("/_authenticated/supplier")({
-  component: SupplierPage,
-});
+export const Route = createFileRoute("/_authenticated/supplier")({ component: SupplierDashboard });
 
-function SupplierPage() {
-  const { user, profile, hasRole, refresh } = useAuth();
-
-  if (!hasRole("supplier") && !hasRole("admin")) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <div className="container mx-auto max-w-md px-4 py-20 text-center">
-          <h1 className="text-2xl font-bold">Supplier access required</h1>
-          <p className="mt-2 text-muted-foreground">Your account is registered as a buyer. Click below to also become a supplier.</p>
-          <Button
-            className="mt-4"
-            onClick={async () => {
-              const { error } = await supabase.from("user_roles").insert({ user_id: user!.id, role: "supplier" });
-              if (error) toast.error(error.message); else { toast.success("You're now a supplier"); refresh(); }
-            }}
-          >
-            Become a supplier
-          </Button>
-        </div>
-        <Footer />
-      </div>
-    );
+function SupplierDashboard() {
+  const { profile } = useAuth();
+  if (!profile) return <div className="container mx-auto px-4 py-8">Loading…</div>;
+  if (profile.role !== "SUPPLIER" && profile.role !== "ADMIN") {
+    return <div className="container mx-auto px-4 py-16 text-center">
+      <h1 className="text-xl font-semibold">Suppliers only</h1>
+      <p className="text-muted-foreground mt-2">This area is for suppliers.</p>
+    </div>;
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      <div className="container mx-auto px-4 py-10">
-        <h1 className="text-3xl font-bold tracking-tight">Supplier dashboard</h1>
-        <p className="mt-1 text-muted-foreground">Manage your products and incoming orders.</p>
-
-        <Tabs defaultValue="products" className="mt-8">
-          <TabsList>
-            <TabsTrigger value="products">Products</TabsTrigger>
-            <TabsTrigger value="orders">Orders</TabsTrigger>
-            <TabsTrigger value="profile">Profile</TabsTrigger>
-          </TabsList>
-          <TabsContent value="products"><ProductsTab /></TabsContent>
-          <TabsContent value="orders"><OrdersTab /></TabsContent>
-          <TabsContent value="profile"><ProfileTab profile={profile} userId={user!.id} onSaved={refresh} /></TabsContent>
-        </Tabs>
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">Supplier dashboard</h1>
+          <p className="text-muted-foreground mt-1">Manage products and orders.</p>
+        </div>
+        {!profile.is_active && <Badge variant="destructive">Account disabled</Badge>}
       </div>
-      <Footer />
+
+      <Tabs defaultValue="products" className="mt-6">
+        <TabsList>
+          <TabsTrigger value="products">Products</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="profile">Profile</TabsTrigger>
+        </TabsList>
+        <TabsContent value="products" className="mt-6"><ProductsTab disabled={!profile.is_active} /></TabsContent>
+        <TabsContent value="orders" className="mt-6"><OrdersTab /></TabsContent>
+        <TabsContent value="profile" className="mt-6"><ProfileTab /></TabsContent>
+      </Tabs>
     </div>
   );
 }
 
-function ProductsTab() {
-  const { user } = useAuth();
+function ProductsTab({ disabled }: { disabled: boolean }) {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({
-    queryKey: ["supplier-products", user?.id],
-    enabled: !!user,
-    queryFn: async () => (await supabase.from("products").select("*, categories(name)").eq("supplier_id", user!.id).order("created_at", { ascending: false })).data ?? [],
+  const { data: products = [] } = useQuery({ queryKey: ["my-products"], queryFn: () => listMyProducts() });
+  const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => listCategories() });
+  const [editing, setEditing] = useState<any | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const delMut = useMutation({
+    mutationFn: (id: string) => deleteProduct({ data: { id } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["my-products"] }); toast.success("Deleted"); },
+    onError: (e: any) => toast.error(e.message),
   });
 
   return (
-    <div className="mt-6 space-y-4">
-      <div className="flex justify-end">
-        <ProductDialog onSaved={() => qc.invalidateQueries({ queryKey: ["supplier-products"] })}>
-          <Button><Plus className="mr-2 h-4 w-4" /> Add product</Button>
-        </ProductDialog>
+    <div>
+      <div className="flex justify-end mb-4">
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
+          <DialogTrigger asChild>
+            <Button disabled={disabled} className="bg-accent text-accent-foreground hover:bg-accent/90"><Plus className="h-4 w-4 mr-1" /> Add product</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} product</DialogTitle></DialogHeader>
+            <ProductForm categories={categories} initial={editing} onDone={() => { setOpen(false); setEditing(null); qc.invalidateQueries({ queryKey: ["my-products"] }); }} />
+          </DialogContent>
+        </Dialog>
       </div>
-      {isLoading && <Skeleton className="h-40" />}
-      {!isLoading && data?.length === 0 && (
-        <div className="rounded-xl border p-10 text-center text-muted-foreground">No products yet. Click "Add product" to start.</div>
+      {products.length === 0 ? (
+        <EmptyState title="No products yet" description="Add your first product." />
+      ) : (
+        <div className="grid gap-3">
+          {products.map((p: any) => (
+            <Card key={p.id} className="p-4 flex items-center gap-4">
+              <div className="h-16 w-16 rounded-lg bg-muted overflow-hidden shrink-0">
+                {p.image_url && <img src={p.image_url} alt="" className="h-full w-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium">{p.name}</div>
+                <div className="text-sm text-muted-foreground">{formatGMD(Number(p.price))} / {p.unit} · {p.stock} in stock · {p.category_name || "Uncategorized"}</div>
+              </div>
+              <Button size="icon" variant="ghost" onClick={() => { setEditing(p); setOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+              <Button size="icon" variant="ghost" onClick={() => { if (confirm("Delete this product?")) delMut.mutate(p.id); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+            </Card>
+          ))}
+        </div>
       )}
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {(data ?? []).map((p: any) => (
-          <Card key={p.id}>
-            <CardContent className="p-4">
-              <div className="flex gap-3">
-                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-muted">
-                  {p.image_url ? <img src={p.image_url} className="h-full w-full object-cover" alt={p.name} /> : <div className="grid h-full w-full place-items-center text-2xl">📦</div>}
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="truncate font-semibold">{p.name}</div>
-                    <Badge variant={p.is_active ? "default" : "secondary"}>{p.is_active ? "Live" : "Hidden"}</Badge>
-                  </div>
-                  <div className="text-sm text-primary">{formatGMD(Number(p.price))} / {p.unit}</div>
-                  <div className="text-xs text-muted-foreground">Stock: {p.stock} · {p.categories?.name}</div>
-                </div>
-              </div>
-              <div className="mt-3 flex justify-end gap-2">
-                <ProductDialog product={p} onSaved={() => qc.invalidateQueries({ queryKey: ["supplier-products"] })}>
-                  <Button size="sm" variant="outline"><Pencil className="mr-1 h-3 w-3" /> Edit</Button>
-                </ProductDialog>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive"
-                  onClick={async () => {
-                    if (!confirm("Delete this product?")) return;
-                    const { error } = await supabase.from("products").delete().eq("id", p.id);
-                    if (error) toast.error(error.message); else { toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["supplier-products"] }); }
-                  }}
-                ><Trash2 className="h-3 w-3" /></Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
     </div>
   );
 }
 
-function ProductDialog({ product, children, onSaved }: { product?: any; children: React.ReactNode; onSaved: () => void }) {
-  const { user } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [form, setForm] = useState({
-    name: product?.name ?? "",
-    description: product?.description ?? "",
-    price: product?.price ?? "",
-    unit: product?.unit ?? "bag",
-    stock: product?.stock ?? 0,
-    image_url: product?.image_url ?? "",
-    location: product?.location ?? "",
-    category_id: product?.category_id ?? "",
-    is_active: product?.is_active ?? true,
+function ProductForm({ categories, initial, onDone }: { categories: any[]; initial: any; onDone: () => void }) {
+  const [f, setF] = useState({
+    name: initial?.name || "",
+    description: initial?.description || "",
+    price: initial?.price?.toString() || "0",
+    unit: initial?.unit || "bag",
+    stock: initial?.stock?.toString() || "0",
+    image_url: initial?.image_url || "",
+    location: initial?.location || "",
+    category_id: initial?.category_id || "",
   });
-  const { data: cats } = useQuery({ queryKey: ["categories"], queryFn: async () => (await supabase.from("categories").select("*").order("name")).data ?? [] });
+  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  async function uploadImage(file: File) {
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
     setUploading(true);
-    const path = `${user!.id}/${Date.now()}-${file.name.replace(/\s+/g, "-")}`;
-    const { error } = await supabase.storage.from("product-images").upload(path, file, { upsert: true });
-    if (error) { setUploading(false); return toast.error(error.message); }
-    const { data: pub } = supabase.storage.from("product-images").getPublicUrl(path);
-    setForm((f) => ({ ...f, image_url: pub.publicUrl }));
-    setUploading(false);
-    toast.success("Image uploaded");
+    try {
+      const { data: u } = await supabase.auth.getUser();
+      if (!u.user) throw new Error("Not authenticated");
+      const path = `${u.user.id}/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage.from("product-images").upload(path, file, { upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from("product-images").getPublicUrl(path);
+      setF((s) => ({ ...s, image_url: data.publicUrl }));
+      toast.success("Image uploaded");
+    } catch (err: any) { toast.error(err.message); }
+    finally { setUploading(false); }
   }
 
-  async function save() {
-    if (!form.name || !form.price) return toast.error("Name and price are required");
-    setSaving(true);
-    const payload = {
-      ...form,
-      price: Number(form.price),
-      stock: Number(form.stock),
-      supplier_id: user!.id,
-      category_id: form.category_id || null,
-      updated_at: new Date().toISOString(),
-    };
-    const { error } = product
-      ? await supabase.from("products").update(payload).eq("id", product.id)
-      : await supabase.from("products").insert(payload);
-    setSaving(false);
-    if (error) return toast.error(error.message);
-    toast.success(product ? "Product updated" : "Product added");
-    setOpen(false);
-    onSaved();
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const payload = {
+        name: f.name, description: f.description || null,
+        price: Number(f.price), unit: f.unit, stock: parseInt(f.stock),
+        image_url: f.image_url || null, location: f.location || null,
+        category_id: f.category_id || null,
+      };
+      if (initial) await updateProduct({ data: { id: initial.id, ...payload } });
+      else await createProduct({ data: payload });
+      toast.success(initial ? "Updated" : "Product added");
+      onDone();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setLoading(false); }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{product ? "Edit product" : "Add product"}</DialogTitle></DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="space-y-2"><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2"><Label>Price (GMD)</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Unit</Label><Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="bag, ton, m³…" /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2"><Label>Stock</Label><Input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} /></div>
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>{(cats ?? []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-2"><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Banjul, Serrekunda…" /></div>
-          <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-          <div className="space-y-2">
-            <Label>Product image</Label>
-            <div className="flex items-center gap-3">
-              {form.image_url ? <img src={form.image_url} className="h-16 w-16 rounded-lg object-cover" alt="" /> : <div className="grid h-16 w-16 place-items-center rounded-lg bg-muted text-2xl">📦</div>}
-              <label className="cursor-pointer">
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
-                <Button variant="outline" type="button" asChild><span><ImagePlus className="mr-2 h-4 w-4" /> {uploading ? "Uploading…" : "Upload"}</span></Button>
-              </label>
-            </div>
-          </div>
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <Label htmlFor="active">Listing live</Label>
-            <Switch id="active" checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
-          </div>
+    <form onSubmit={submit} className="space-y-3">
+      <div><Label>Name</Label><Input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+      <div><Label>Description</Label><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></div>
+      <div className="grid grid-cols-3 gap-3">
+        <div><Label>Price (GMD)</Label><Input type="number" step="0.01" required value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></div>
+        <div><Label>Unit</Label><Input required value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} /></div>
+        <div><Label>Stock</Label><Input type="number" required value={f.stock} onChange={(e) => setF({ ...f, stock: e.target.value })} /></div>
+      </div>
+      <div>
+        <Label>Image</Label>
+        <Input type="file" accept="image/*" onChange={onFile} disabled={uploading} />
+        {f.image_url && <img src={f.image_url} alt="" className="mt-2 h-24 w-24 rounded object-cover" />}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><Label>Location</Label><Input value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} /></div>
+        <div>
+          <Label>Category</Label>
+          <Select value={f.category_id} onValueChange={(v) => setF({ ...f, category_id: v })}>
+            <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
+            <SelectContent>{categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+          </Select>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+      <Button type="submit" disabled={loading || uploading} className="w-full">{loading ? "Saving…" : "Save"}</Button>
+    </form>
   );
 }
 
 function OrdersTab() {
-  const { user } = useAuth();
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({
-    queryKey: ["supplier-orders", user?.id],
-    enabled: !!user,
-    queryFn: async () => {
-      // get order_items I supply, then load their orders
-      const { data: items } = await supabase.from("order_items").select("*, orders(*)").eq("supplier_id", user!.id).order("id", { ascending: false });
-      // group by order
-      const map = new Map<string, any>();
-      (items ?? []).forEach((it: any) => {
-        if (!it.orders) return;
-        const o = map.get(it.orders.id) ?? { ...it.orders, items: [] };
-        o.items.push(it);
-        map.set(it.orders.id, o);
-      });
-      return Array.from(map.values()).sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-    },
+  const { data: orders = [] } = useQuery({ queryKey: ["supplier-orders"], queryFn: () => listSupplierOrders() });
+  const mut = useMutation({
+    mutationFn: (v: { id: string; status: OrderStatus }) => updateOrderStatus({ data: v }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["supplier-orders"] }); toast.success("Order updated"); },
+    onError: (e: any) => toast.error(e.message),
   });
-
-  async function setStatus(orderId: string, status: string) {
-    const { error } = await supabase.from("orders").update({ status, updated_at: new Date().toISOString() }).eq("id", orderId);
-    if (error) toast.error(error.message); else { toast.success("Status updated"); qc.invalidateQueries({ queryKey: ["supplier-orders"] }); }
-  }
-
+  if (orders.length === 0) return <EmptyState title="No orders yet" />;
   return (
-    <div className="mt-6 space-y-3">
-      {isLoading && <Skeleton className="h-32" />}
-      {!isLoading && data?.length === 0 && <div className="rounded-xl border p-10 text-center text-muted-foreground">No orders yet.</div>}
-      {(data ?? []).map((o: any) => (
-        <Card key={o.id}>
-          <CardContent className="p-5">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <div className="text-xs text-muted-foreground">Order #{o.id.slice(0, 8)} · {new Date(o.created_at).toLocaleString()}</div>
-                <div className="mt-1 text-sm">{o.delivery_address} · {o.phone}</div>
-              </div>
-              <Badge className={statusColor(o.status)}>{o.status}</Badge>
+    <div className="space-y-3">
+      {orders.map((o: any) => (
+        <Card key={o.id} className="p-5">
+          <div className="flex items-start justify-between flex-wrap gap-3">
+            <div>
+              <div className="text-sm text-muted-foreground">Order #{o.id.slice(0, 8)} · {o.buyer_name}</div>
+              <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString()}</div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              {o.items.map((it: any) => (
-                <span key={it.id} className="rounded-md bg-muted px-2 py-1">{it.quantity}× {it.name} · {formatGMD(Number(it.price) * it.quantity)}</span>
-              ))}
-            </div>
-            <div className="mt-3 flex gap-2">
-              <Select value={o.status} onValueChange={(v) => setStatus(o.id, v)}>
-                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["pending", "confirmed", "delivering", "delivered", "canceled"].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
+            <OrderStatusBadge status={o.status} />
+          </div>
+          <div className="mt-3 text-sm space-y-1">
+            {o.items?.map((it: any) => <div key={it.id}>{it.quantity} × {it.product_name} — {formatGMD(Number(it.price) * it.quantity)}</div>)}
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground">Deliver to: {o.delivery_address} · {o.phone}</div>
+          <div className="mt-3 flex gap-2 flex-wrap">
+            <Select value={o.status} onValueChange={(v) => mut.mutate({ id: o.id, status: v as OrderStatus })}>
+              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(["PENDING","CONFIRMED","DELIVERING","DELIVERED","CANCELED"] as OrderStatus[]).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </Card>
       ))}
     </div>
   );
 }
 
-function ProfileTab({ profile, userId, onSaved }: { profile: any; userId: string; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: profile?.name ?? "", phone: profile?.phone ?? "", location: profile?.location ?? "" });
-  const [saving, setSaving] = useState(false);
+function ProfileTab() {
+  const { profile } = useAuth();
+  const [f, setF] = useState({ name: profile?.name || "", phone: profile?.phone || "", location: profile?.location || "" });
+  const [loading, setLoading] = useState(false);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try { await updateMyProfile({ data: f }); toast.success("Profile updated"); }
+    catch (e: any) { toast.error(e.message); }
+    finally { setLoading(false); }
+  }
   return (
-    <Card className="mt-6 max-w-xl">
-      <CardContent className="space-y-4 p-5">
-        <div className="space-y-2"><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-        <div className="space-y-2"><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-        <div className="space-y-2"><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
-        <Button
-          disabled={saving}
-          onClick={async () => {
-            setSaving(true);
-            const { error } = await supabase.from("profiles").update(form).eq("id", userId);
-            setSaving(false);
-            if (error) toast.error(error.message); else { toast.success("Profile updated"); onSaved(); }
-          }}
-        >{saving ? "Saving…" : "Save changes"}</Button>
-      </CardContent>
+    <Card className="p-6 max-w-lg">
+      <form onSubmit={submit} className="space-y-3">
+        <div><Label>Name</Label><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+        <div><Label>Phone</Label><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
+        <div><Label>Location</Label><Input value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} /></div>
+        <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save changes"}</Button>
+      </form>
     </Card>
   );
 }
