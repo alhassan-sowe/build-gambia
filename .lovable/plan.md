@@ -1,95 +1,72 @@
+# Envora v1: Rebuild on the Quote-First Model
 
-# Envora — Construction Materials Marketplace
+## Decisions locked in
+- Buyers order through quotes only: request a quote, the supplier sends a price, the buyer accepts, and the accepted quote becomes an order. No cart and no direct checkout.
+- Suppliers submit business details and documents. An admin approves them before they can publish listings.
+- Included in v1: in-app notifications, reviews (after delivery), and favorites.
+- The database is rebuilt cleanly. Any existing test data is dropped.
+- Out of scope: payments, transport providers, messaging, email and SMS alerts, map search, sub-categories, multiple images per product, price negotiation.
 
-A mobile-first marketplace for The Gambia where buyers order materials (cement, sand, blocks, gravel, iron rods, tiles, transport) directly from suppliers. Built on TanStack Start with your own Supabase project.
+Defaults I'll use until you say otherwise:
+- Currency is GMD (shown as "D850").
+- The supplier sets the delivery fee in the quote.
+- Quotes stay valid for 7 days.
+- Buyers can cancel while an order is pending. Suppliers can cancel before delivery starts, with a reason.
+- Order statuses: pending, confirmed, out for delivery, delivered, cancelled.
+- Fixed units: bag, ton, trip, piece, length, m², m³.
+- Delivery regions: Banjul, Kanifing (KMC), Brikama/West Coast.
 
-## Connecting your Supabase
+## What users will see
+**Public:** home, marketplace (search, category filter, region filter, pages of results), product page, supplier directory, supplier profile, contact, sign in / register.
 
-Before I start building, you'll paste these into the project as env vars:
+**Buyer:** dashboard, quote requests (accept or decline), orders with a status timeline, favorites, notifications, leave a review after delivery.
 
-- `VITE_SUPABASE_URL` + `SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY` + `SUPABASE_PUBLISHABLE_KEY` (anon key)
-- `SUPABASE_SERVICE_ROLE_KEY` (server-only, for admin operations)
+**Supplier:** onboarding (business profile and document upload, then "pending approval"), dashboard, products (add, edit, deactivate), incoming quotes (respond with price, fee and validity), orders (update status), notifications.
 
-I'll deliver the SQL schema as a single migration file you run in your Supabase SQL editor (or via `supabase db push`). Storage bucket + RLS policies included.
-
-## Database (SQL you run on your Supabase)
-
-Enum: `app_role` (`buyer`, `supplier`, `admin`), `order_status` (`pending`, `confirmed`, `delivering`, `delivered`, `canceled`).
-
-Tables:
-- `profiles` — id (FK auth.users), email, name, phone, location, created_at. Auto-created via `on_auth_user_created` trigger.
-- `user_roles` — separate role table (id, user_id, role) with `has_role(uuid, app_role)` security-definer function. **No roles on profiles.**
-- `categories` — id, name (unique), description.
-- `products` — id, name, description, price, unit, stock, image_url, location, is_active, supplier_id, category_id, timestamps.
-- `orders` — id, buyer_id, total, delivery_address, phone, notes, status, timestamps.
-- `order_items` — id, order_id, product_id, quantity, price.
-
-RLS policies (since suppliers are auto-approved):
-- profiles: user reads/updates own; admin reads all.
-- user_roles: user reads own; admin manages.
-- categories: public read; admin write.
-- products: public read where `is_active`; supplier writes own; admin writes any.
-- orders / order_items: buyer reads own; supplier reads orders containing their products; admin reads all; status updates by supplier (own) or admin.
-
-Storage:
-- Bucket `product-images` (public read). Supplier can upload to `{supplier_id}/...` path; public select policy.
-
-Seed: ~6 starter categories (Cement, Sand, Blocks, Gravel, Iron Rods, Tiles, Transport).
-
-## Routes (TanStack file-based)
-
-Public:
-- `/` — Landing (hero, CTAs "Order Now" / "Become a Supplier", category preview, trust strip).
-- `/auth` — Login / Register tabs, role selection (Buyer/Supplier).
-- `/catalog` — Search + category filters + product grid.
-- `/products/$id` — Product detail, supplier info, Add to Cart / Order Now.
-- `/contact` — Phone, WhatsApp link, email, FAQ accordion, message form.
-
-Protected (under `_authenticated/`):
-- `/cart` — Items, quantities, delivery form (address, phone, date, notes), Place Order.
-- `/dashboard` — Buyer: past/current orders, status badges, reorder.
-- `/supplier` — Overview (stats), Products tab (CRUD + image upload), Orders tab (status updates), Profile tab.
-- `/admin` — Suppliers list (toggle active), categories CRUD, products manage, all orders, users & roles. Gated by `has_role(uid, 'admin')`.
-
-## Server functions (`src/lib/*.functions.ts`)
-
-- `products.functions.ts` — listProducts, getProduct, createProduct, updateProduct, deleteProduct.
-- `orders.functions.ts` — placeOrder (creates order + items in a transaction via RPC), listMyOrders, listSupplierOrders, listAllOrders, updateOrderStatus.
-- `categories.functions.ts` — list, create, update, delete.
-- `admin.functions.ts` — listUsers, setUserRole, toggleSupplierActive. Each verifies `has_role` server-side.
-
-Auth state via `@/integrations/supabase/client` in components; protected server fns use `requireSupabaseAuth` middleware. Cart lives in client state (Zustand) until checkout.
-
-## UI / Design
-
-- Tailwind v4 tokens in `src/styles.css`. Primary: deep teal. Soft shadows, rounded-xl cards, generous spacing.
-- Inter font, mobile-first responsive.
-- shadcn components: Button, Card, Input, Select, Dialog, Sheet (mobile nav + cart drawer), Tabs, Badge (order status colors), Table, Sonner toasts, Skeleton loaders, empty states.
-- Navbar: logo, links, cart icon (count badge), Login OR user menu showing name + role.
-
-## Behaviors
-
-- Toasts on order placed, product saved, profile updated.
-- Loading skeletons on lists; empty states with CTA.
-- Form validation with Zod (email, phone, quantities, prices).
-- Status badges: pending=amber, confirmed=blue, delivering=indigo, delivered=green, canceled=red.
-
-## Out of scope for v1
-
-- Payments (room left for Stripe/local provider later).
-- Real-time order push notifications (status polled on dashboard load).
-- Multi-language.
+**Admin:** overview counts, supplier verification queue (view documents, approve or reject with a reason, suspend), users, products (deactivate), categories, all quotes and orders, review moderation.
 
 ## Build order
+1. New database setup: tables, security rules, server-side actions, storage, seed categories. Delivered as a migration you run in Supabase.
+2. Auth and roles (signup offers buyer or supplier only), plus the shared app frame and navigation.
+3. Supplier onboarding and the admin verification queue.
+4. Products, marketplace, product page, supplier directory.
+5. Quote flow, then order flow.
+6. Notifications, favorites, reviews.
+7. Admin pages, empty, loading and error states, mobile check.
+8. Security test pass: buyer A cannot see buyer B's records, no self-promotion to admin, no price tampering.
 
-1. Schema migration file + storage bucket SQL + seed categories.
-2. Auth (register with role, login, profile auto-create).
-3. Landing + Catalog + Product detail (public reads).
-4. Cart + Checkout (place order).
-5. Buyer dashboard.
-6. Supplier dashboard (products CRUD with image upload, orders).
-7. Admin dashboard.
-8. Contact page, polish, empty/loading states, toasts.
-
-After you approve, I'll start with the SQL migration so you can run it on your Supabase while I build the frontend.
+## Technical details
+- **Stack:** keep TanStack Start. Keep the browser Supabase client and RLS. All state changes go through Postgres `SECURITY DEFINER` RPCs. No Edge Functions.
+- **Migration:** a single `supabase/migrations/0001_envora_v1.sql`. It drops the old objects (profiles.role, the old enums, old orders and products) and recreates everything. The old `schema.sql` is removed.
+- **Tables:**
+  - `profiles` (id = auth uid, readable only by the owner, admins and counterparties)
+  - `user_roles` + `has_role()` (enum: customer, supplier, admin)
+  - `suppliers` (owner_user_id unique, verification_status pending/approved/rejected, is_suspended, rejection_reason)
+  - `supplier_documents` (private bucket)
+  - `categories` (slug, is_active, sort_order)
+  - `products` (supplier_id, category_id, unit, price, a null price means "request quote", availability_status, image_url, is_active)
+  - `favorites` (unique user + product)
+  - `quotes` and `quote_items` (single supplier, totals computed by the server, valid_until)
+  - `orders` (unique quote_id, snapshot of totals and address)
+  - `order_items` (snapshot of name, unit and price)
+  - `order_status_history`
+  - `reviews` (unique order_id, rating 1–5, delivered orders only)
+  - `notifications`
+  - `audit_log`
+- **RPCs:**
+  - `request_quote`, `respond_quote`, `accept_quote` (creates the order), `decline_quote`, `cancel_quote`
+  - `update_order_status` (transition guard), `cancel_order`
+  - `submit_supplier_verification`, `admin_review_supplier`, `admin_set_suspended`, `admin_set_role`
+  - `submit_review`, `mark_notifications_read`
+- Notifications are created by triggers on changes to quotes, orders and verification.
+- **RLS:**
+  - Clients get SELECT plus a narrow INSERT. There are no direct UPDATE grants on quotes or orders.
+  - Product inserts require an approved, non-suspended supplier.
+  - Public supplier info lives in `suppliers`. Personal data stays out of public reads.
+- **Signup trigger:** whitelists only customer or supplier from the signup metadata.
+- **Storage:**
+  - `product-images` is public to read. Writes are allowed only under `{supplier_id}/`.
+  - `supplier-docs` is private. Owners and admins can read it, through signed URLs.
+- **Indexes:** the spec's list, a trigram index on product names, and indexes on ownership keys used by policies. Marketplace lists are paginated (24 per page).
+- **Frontend:** remove the cart and checkout. Rename the `/materials` pages to `/marketplace`. Add `/suppliers`, `/suppliers/$id`, `/onboarding`, and the quotes, orders, notifications and favorites pages under `_authenticated`. Rewrite the data modules to use lowercase enums and RPCs.
+- **Seed:** the spec's categories. Test users are created through signup, then promoted to admin with one SQL line.
