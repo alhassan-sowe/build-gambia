@@ -1,3 +1,4 @@
+import { pageHead } from "@/lib/route-meta";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -14,6 +15,11 @@ import { cn } from "@/lib/utils";
 type SearchParams = { category?: string; search?: string };
 
 export const Route = createFileRoute("/materials")({
+  head: () =>
+    pageHead(
+      "Materials catalog",
+      "Browse active construction materials and request supplier quotes.",
+    ),
   validateSearch: (s: Record<string, unknown>): SearchParams => ({
     category: typeof s.category === "string" ? s.category : undefined,
     search: typeof s.search === "string" ? s.search : undefined,
@@ -28,12 +34,23 @@ function Materials() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState<"newest" | "price-asc" | "price-desc">("newest");
 
-  useEffect(() => { setQ(search.search || ""); }, [search.search]);
+  useEffect(() => {
+    setQ(search.search || "");
+  }, [search.search]);
 
-  const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => listCategories() });
-  const { data: products = [], isLoading } = useQuery({
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => listCategories(),
+  });
+  const {
+    data: products = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["products", search.category, search.search],
-    queryFn: () => listProducts({ data: { categoryId: search.category, search: search.search || undefined } }),
+    queryFn: () =>
+      listProducts({ data: { categoryId: search.category, search: search.search || undefined } }),
   });
 
   const sorted = [...products].sort((a: any, b: any) => {
@@ -57,15 +74,29 @@ function Materials() {
             {activeCat ? activeCat.name : "All materials"}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isLoading ? "Loading…" : `${sorted.length} ${sorted.length === 1 ? "product" : "products"}`}
+            {isLoading
+              ? "Loading…"
+              : `${sorted.length} ${sorted.length === 1 ? "product" : "products"}`}
             {search.search && ` matching "${search.search}"`}
           </p>
         </div>
         <div className="hidden sm:flex items-center gap-1 rounded-lg border p-0.5 bg-card">
-          <Button size="icon" variant={view === "grid" ? "default" : "ghost"} className="h-8 w-8" onClick={() => setView("grid")} aria-label="Grid view">
+          <Button
+            size="icon"
+            variant={view === "grid" ? "default" : "ghost"}
+            className="h-8 w-8"
+            onClick={() => setView("grid")}
+            aria-label="Grid view"
+          >
             <LayoutGrid className="h-4 w-4" />
           </Button>
-          <Button size="icon" variant={view === "list" ? "default" : "ghost"} className="h-8 w-8" onClick={() => setView("list")} aria-label="List view">
+          <Button
+            size="icon"
+            variant={view === "list" ? "default" : "ghost"}
+            className="h-8 w-8"
+            onClick={() => setView("list")}
+            aria-label="List view"
+          >
             <List className="h-4 w-4" />
           </Button>
         </div>
@@ -75,27 +106,49 @@ function Materials() {
         <form onSubmit={applySearch} className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search materials…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9 h-10 rounded-full bg-card" />
+            <Input
+              placeholder="Search materials…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="pl-9 h-10 rounded-full bg-card"
+            />
           </div>
           <Sheet>
             <SheetTrigger asChild>
-              <Button type="button" variant="outline" size="icon" className="h-10 w-10 rounded-full shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full shrink-0"
+              >
                 <SlidersHorizontal className="h-4 w-4" />
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-[300px] sm:w-[360px]">
-              <SheetHeader><SheetTitle>Filter & sort</SheetTitle></SheetHeader>
+              <SheetHeader>
+                <SheetTitle>Filter & sort</SheetTitle>
+              </SheetHeader>
               <div className="mt-6 space-y-6">
                 <div>
                   <div className="text-sm font-semibold mb-2">Sort by</div>
                   <div className="grid gap-2">
-                    {([
-                      { v: "newest", l: "Newest" },
-                      { v: "price-asc", l: "Price: low to high" },
-                      { v: "price-desc", l: "Price: high to low" },
-                    ] as const).map((o) => (
-                      <button key={o.v} onClick={() => setSort(o.v)}
-                        className={cn("text-left px-3 py-2 rounded-lg border text-sm", sort === o.v ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border")}>
+                    {(
+                      [
+                        { v: "newest", l: "Newest" },
+                        { v: "price-asc", l: "Price: low to high" },
+                        { v: "price-desc", l: "Price: high to low" },
+                      ] as const
+                    ).map((o) => (
+                      <button
+                        key={o.v}
+                        onClick={() => setSort(o.v)}
+                        className={cn(
+                          "text-left px-3 py-2 rounded-lg border text-sm",
+                          sort === o.v
+                            ? "border-primary bg-primary/10 text-primary font-semibold"
+                            : "border-border",
+                        )}
+                      >
                         {o.l}
                       </button>
                     ))}
@@ -104,13 +157,28 @@ function Materials() {
                 <div>
                   <div className="text-sm font-semibold mb-2">Category</div>
                   <div className="grid gap-2">
-                    <button onClick={() => navigate({ search: { ...search, category: undefined } })}
-                      className={cn("text-left px-3 py-2 rounded-lg border text-sm", !search.category ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border")}>
+                    <button
+                      onClick={() => navigate({ search: { ...search, category: undefined } })}
+                      className={cn(
+                        "text-left px-3 py-2 rounded-lg border text-sm",
+                        !search.category
+                          ? "border-primary bg-primary/10 text-primary font-semibold"
+                          : "border-border",
+                      )}
+                    >
                       All categories
                     </button>
                     {categories.map((c: any) => (
-                      <button key={c.id} onClick={() => navigate({ search: { ...search, category: c.id } })}
-                        className={cn("text-left px-3 py-2 rounded-lg border text-sm", search.category === c.id ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border")}>
+                      <button
+                        key={c.id}
+                        onClick={() => navigate({ search: { ...search, category: c.id } })}
+                        className={cn(
+                          "text-left px-3 py-2 rounded-lg border text-sm",
+                          search.category === c.id
+                            ? "border-primary bg-primary/10 text-primary font-semibold"
+                            : "border-border",
+                        )}
+                      >
                         {c.name}
                       </button>
                     ))}
@@ -122,15 +190,28 @@ function Materials() {
         </form>
 
         <div className="mt-3 flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
-          <button onClick={() => navigate({ search: { ...search, category: undefined } })}
-            className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-medium border transition",
-              !search.category ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:border-primary")}>
+          <button
+            onClick={() => navigate({ search: { ...search, category: undefined } })}
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium border transition",
+              !search.category
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card hover:border-primary",
+            )}
+          >
             All
           </button>
           {categories.map((c: any) => (
-            <button key={c.id} onClick={() => navigate({ search: { ...search, category: c.id } })}
-              className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-medium border transition",
-                search.category === c.id ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:border-primary")}>
+            <button
+              key={c.id}
+              onClick={() => navigate({ search: { ...search, category: c.id } })}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium border transition",
+                search.category === c.id
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card hover:border-primary",
+              )}
+            >
               {c.name}
             </button>
           ))}
@@ -138,20 +219,37 @@ function Materials() {
       </div>
 
       <div className="mt-6">
-        {isLoading ? (
+        {isError ? (
+          <div role="alert">
+            Could not load materials. <Button onClick={() => void refetch()}>Retry</Button>
+          </div>
+        ) : isLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-64 rounded-xl bg-muted animate-pulse" />)}
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-64 rounded-xl bg-muted animate-pulse" />
+            ))}
           </div>
         ) : sorted.length === 0 ? (
-          <EmptyState title="No products found" description="Try a different search or category."
-            action={<Button onClick={() => navigate({ search: {} })} variant="outline">Clear filters</Button>} />
+          <EmptyState
+            title="No products found"
+            description="Try a different search or category."
+            action={
+              <Button onClick={() => navigate({ search: {} })} variant="outline">
+                Clear filters
+              </Button>
+            }
+          />
         ) : view === "list" ? (
           <div className="grid gap-3 md:grid-cols-2">
-            {sorted.map((p: any) => <ProductCard key={p.id} product={p} variant="list" />)}
+            {sorted.map((p: any) => (
+              <ProductCard key={p.id} product={p} variant="list" />
+            ))}
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            {sorted.map((p: any) => <ProductCard key={p.id} product={p} />)}
+            {sorted.map((p: any) => (
+              <ProductCard key={p.id} product={p} />
+            ))}
           </div>
         )}
       </div>
