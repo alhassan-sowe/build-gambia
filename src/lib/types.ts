@@ -1,5 +1,5 @@
-export type AppRole = "BUYER" | "SUPPLIER" | "ADMIN";
-export type OrderStatus = "PENDING" | "CONFIRMED" | "DELIVERING" | "DELIVERED" | "CANCELED";
+export type AppRole = "buyer" | "supplier" | "admin";
+export type OrderStatus = "confirmed";
 
 export interface Profile {
   id: string;

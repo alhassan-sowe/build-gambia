@@ -1,158 +1,188 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { ShieldCheck, Truck, Banknote, ArrowLeft } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-
-export const Route = createFileRoute("/auth")({ component: AuthPage });
-
+import { useAuth } from "@/lib/use-auth";
+import { authSchema } from "@/lib/pilot-validation";
+import { pageHead } from "@/lib/route-meta";
+export const Route = createFileRoute("/auth")({
+  head: () => pageHead("Sign in", "Sign in or create a buyer or supplier account for Envora."),
+  component: AuthPage,
+});
 function AuthPage() {
+  const auth = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"login" | "register">("login");
-
+  const [mode, setMode] = useState("login");
+  const [role, setRole] = useState("buyer");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/" });
-    });
-  }, [navigate]);
-
+    if (auth.profile && !auth.loading)
+      void navigate({
+        to:
+          auth.profile.role === "admin"
+            ? "/admin"
+            : auth.profile.role === "supplier" ||
+                sessionStorage.getItem("envora-supplier-intent") === "yes"
+              ? "/supplier"
+              : "/dashboard",
+        replace: true,
+      });
+  }, [auth.profile, auth.loading, navigate]);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setMessage("");
+    setBusy(true);
+    try {
+      const values = authSchema.safeParse({ email, password });
+      if (!values.success) {
+        setMessage("Enter a valid email and a password of at least 8 characters.");
+        return;
+      }
+      if (mode === "register") {
+        if (!name.trim()) {
+          setMessage("Enter your name.");
+          return;
+        }
+        if (role === "supplier") sessionStorage.setItem("envora-supplier-intent", "yes");
+        else sessionStorage.removeItem("envora-supplier-intent");
+        const { data, error } = await supabase.auth.signUp({
+          ...values.data,
+          options: { emailRedirectTo: window.location.origin, data: { name: name.trim() } },
+        });
+        if (error) {
+          setMessage(
+            error.code === "user_already_exists"
+              ? "An account already exists. Sign in instead."
+              : "Could not create your account. Please retry later.",
+          );
+          return;
+        }
+        setMessage(
+          data.session
+            ? "Account created. Loading your account…"
+            : "Check your email to confirm your account, then sign in. Supplier business details are completed after sign-in.",
+        );
+      } else {
+        const { error } = await supabase.auth.signInWithPassword(values.data);
+        if (error) {
+          setMessage("Sign-in failed. Check your email, password and email confirmation.");
+          return;
+        }
+        await auth.refresh();
+      }
+    } catch {
+      setMessage("Connection failed. Please retry.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="min-h-screen grid md:grid-cols-2 bg-background">
-      <div className="hidden md:flex relative bg-surface text-surface-foreground p-12 flex-col justify-between overflow-hidden">
-        <div className="absolute inset-0 opacity-25 pointer-events-none"
-          style={{ backgroundImage: "radial-gradient(circle at 30% 20%, oklch(0.68 0.21 45 / 0.5), transparent 50%), radial-gradient(circle at 80% 80%, oklch(0.72 0.19 50 / 0.4), transparent 50%)" }} />
-        <div className="relative">
-          <Link to="/" className="flex items-center gap-2 font-extrabold text-xl">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">E</span>
-            Envora
-          </Link>
-        </div>
-        <div className="relative max-w-md">
-          <h1 className="text-4xl font-extrabold leading-tight">The Gambia's direct materials marketplace.</h1>
-          <p className="mt-4 opacity-80">Join thousands of buyers and suppliers building smarter, together.</p>
-          <div className="mt-8 space-y-3">
-            {[
-              { Icon: ShieldCheck, t: "Verified suppliers" },
-              { Icon: Truck, t: "Direct delivery to your site" },
-              { Icon: Banknote, t: "Pay on delivery" },
-            ].map(({ Icon, t }) => (
-              <div key={t} className="flex items-center gap-3"><Icon className="h-5 w-5 text-primary" /><span>{t}</span></div>
-            ))}
-          </div>
-        </div>
-        <div className="relative text-xs opacity-60">© {new Date().getFullYear()} Envora.</div>
-      </div>
-
-      <div className="flex flex-col p-6 md:p-12 justify-center">
-        <Link to="/" className="md:hidden flex items-center gap-1 text-sm text-muted-foreground mb-6">
-          <ArrowLeft className="h-4 w-4" /> Back to Envora
+      <div className="hidden md:flex bg-surface text-surface-foreground p-12 flex-col justify-between">
+        <Link to="/" className="font-extrabold text-2xl">
+          Envora
         </Link>
+        <div>
+          <h1 className="text-4xl font-bold">Construction materials in The Gambia.</h1>
+          <p className="mt-4">Request quotes from approved suppliers.</p>
+        </div>
+        <span>Envora</span>
+      </div>
+      <div className="p-6 md:p-12 flex flex-col justify-center">
         <div className="w-full max-w-md mx-auto">
-          <div className="md:hidden mb-6 flex items-center gap-2 font-extrabold text-xl">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">E</span>
-            Envora
-          </div>
-          <h2 className="text-2xl font-bold">Welcome to Envora</h2>
-          <p className="text-sm text-muted-foreground mt-1">Sign in or create your account to get started.</p>
-
-          <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="mt-6">
+          <Link to="/" className="text-sm text-muted-foreground">
+            Back to Envora
+          </Link>
+          <h2 className="text-2xl font-bold mt-6">Welcome to Envora</h2>
+          <Tabs
+            value={mode}
+            onValueChange={(v) => {
+              setMode(v);
+              setMessage("");
+            }}
+            className="mt-6"
+          >
             <TabsList className="grid grid-cols-2 w-full">
               <TabsTrigger value="login">Log In</TabsTrigger>
               <TabsTrigger value="register">Create Account</TabsTrigger>
             </TabsList>
-            <TabsContent value="login"><LoginForm /></TabsContent>
-            <TabsContent value="register"><RegisterForm /></TabsContent>
           </Tabs>
+          <form onSubmit={submit} className="space-y-4 mt-5">
+            {mode === "register" && (
+              <>
+                <Label htmlFor="name">Full name</Label>
+                <Input
+                  id="name"
+                  required
+                  maxLength={100}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+                <Label>Account type</Label>
+                <RadioGroup value={role} onValueChange={setRole} className="flex gap-6">
+                  <label className="flex gap-2">
+                    <RadioGroupItem value="buyer" />
+                    Buyer
+                  </label>
+                  <label className="flex gap-2">
+                    <RadioGroupItem value="supplier" />
+                    Supplier
+                  </label>
+                </RadioGroup>
+              </>
+            )}
+            <div>
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                required
+                maxLength={255}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete={mode === "register" ? "new-password" : "current-password"}
+                required
+                minLength={mode === "register" ? 8 : 1}
+                maxLength={128}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={busy || auth.loading}>
+              {busy ? "Please wait…" : mode === "register" ? "Create Account" : "Log In"}
+            </Button>
+            {message && (
+              <p role="status" className="text-sm">
+                {message}
+              </p>
+            )}
+            {auth.error && (
+              <div role="alert">
+                <p>{auth.error}</p>
+                <Button type="button" variant="outline" onClick={() => void auth.refresh()}>
+                  Retry account loading
+                </Button>
+              </div>
+            )}
+          </form>
         </div>
       </div>
     </div>
-  );
-}
-
-function LoginForm() {
-  const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success("Welcome back!");
-    let dest = "/";
-    const uid = data.user?.id;
-    if (uid) {
-      const { data: p } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
-      const role = (p as any)?.role;
-      dest = role === "ADMIN" ? "/admin" : role === "SUPPLIER" ? "/supplier" : "/dashboard";
-    }
-    navigate({ to: dest });
-  }
-  return (
-    <form onSubmit={onSubmit} className="space-y-4 mt-4">
-      <div><Label htmlFor="email">Email</Label><Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="h-11" /></div>
-      <div><Label htmlFor="password">Password</Label><Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="h-11" /></div>
-      <Button type="submit" disabled={loading} className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90">{loading ? "Signing in…" : "Log In"}</Button>
-    </form>
-  );
-}
-
-function RegisterForm() {
-  const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", location: "", role: "BUYER" as "BUYER" | "SUPPLIER" });
-  const [loading, setLoading] = useState(false);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: { name: form.name, phone: form.phone, location: form.location, role: form.role },
-      },
-    });
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success(form.role === "SUPPLIER" ? "Account created! You can start listing now." : "Account created! You're signed in.");
-    navigate({ to: "/" });
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="space-y-4 mt-4">
-      <div>
-        <Label>I am a…</Label>
-        <RadioGroup value={form.role} onValueChange={(v) => setForm({ ...form, role: v as any })} className="grid grid-cols-2 gap-3 mt-2">
-          <label className="flex items-center gap-2 rounded-xl border-2 p-3 cursor-pointer has-[:checked]:border-primary has-[:checked]:bg-primary/5">
-            <RadioGroupItem value="BUYER" /><div><div className="font-semibold text-sm">Buyer</div><div className="text-[11px] text-muted-foreground">Order materials</div></div>
-          </label>
-          <label className="flex items-center gap-2 rounded-xl border-2 p-3 cursor-pointer has-[:checked]:border-primary has-[:checked]:bg-primary/5">
-            <RadioGroupItem value="SUPPLIER" /><div><div className="font-semibold text-sm">Supplier</div><div className="text-[11px] text-muted-foreground">Sell materials</div></div>
-          </label>
-        </RadioGroup>
-        {form.role === "SUPPLIER" && (
-          <Badge variant="secondary" className="mt-2 text-[11px]">Suppliers can list right after signing up.</Badge>
-        )}
-      </div>
-      <div><Label>Full name</Label><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="h-11" /></div>
-      <div><Label>Email</Label><Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="h-11" /></div>
-      <div><Label>Password</Label><Input type="password" required minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="h-11" /></div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="h-11" /></div>
-        <div><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="h-11" /></div>
-      </div>
-      <Button type="submit" disabled={loading} className="w-full h-11 bg-primary text-primary-foreground hover:bg-primary/90">{loading ? "Creating…" : "Create Account"}</Button>
-      <p className="text-xs text-muted-foreground text-center">By signing up you agree to our terms.</p>
-    </form>
   );
 }

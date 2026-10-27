@@ -2,104 +2,204 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { useAuth } from "@/lib/use-auth";
+import { getMyBusiness, registerSupplier } from "@/lib/quotes.functions";
+import {
+  listMyProducts,
+  createProduct,
+  updateProduct,
+  toggleProductActive,
+} from "@/lib/products.functions";
+import { listCategories } from "@/lib/categories.functions";
+import { friendlyError } from "@/lib/pilot-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { OrderStatusBadge } from "@/components/order-status-badge";
-import { EmptyState } from "@/components/empty-state";
-import { useAuth } from "@/lib/use-auth";
-import { listMyProducts, createProduct, updateProduct, deleteProduct } from "@/lib/products.functions";
-import { listCategories } from "@/lib/categories.functions";
-import { listSupplierOrders, updateOrderStatus } from "@/lib/orders.functions";
-import { updateMyProfile } from "@/lib/profiles.functions";
-import { formatGMD } from "@/lib/cart";
-import { supabase } from "@/integrations/supabase/client";
-import type { OrderStatus } from "@/lib/types";
-
-export const Route = createFileRoute("/_authenticated/supplier")({ component: SupplierDashboard });
-
-function SupplierDashboard() {
-  const { profile } = useAuth();
-  if (!profile) return <div className="container mx-auto px-4 py-8">Loading…</div>;
-  if (profile.role !== "SUPPLIER" && profile.role !== "ADMIN") {
-    return <div className="container mx-auto px-4 py-16 text-center">
-      <h1 className="text-xl font-semibold">Suppliers only</h1>
-      <p className="text-muted-foreground mt-2">This area is for suppliers.</p>
-    </div>;
-  }
-
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { QuoteList, OrdersList } from "@/components/quote-list";
+import { pageHead } from "@/lib/route-meta";
+import type { Database } from "@/integrations/supabase/types";
+type Product = Database["public"]["Tables"]["products"]["Row"];
+export const Route = createFileRoute("/_authenticated/supplier")({
+  head: () =>
+    pageHead(
+      "Supplier dashboard",
+      "Manage your business application, listings and quote responses.",
+    ),
+  component: Supplier,
+});
+function Supplier() {
+  const auth = useAuth();
+  const q = useQuery({ queryKey: ["my-business"], queryFn: getMyBusiness });
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
+  const m = useMutation({
+    mutationFn: () => registerSupplier({ name, location }),
+    onSuccess: () => {
+      sessionStorage.removeItem("envora-supplier-intent");
+      void auth.refresh();
+      void qc.invalidateQueries();
+      toast.success("Application submitted for approval");
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+  if (q.isPending || auth.loading) return <p className="p-8">Loading supplier account…</p>;
+  if (q.isError || auth.error)
+    return (
+      <div className="p-8" role="alert">
+        Could not load your account.{" "}
+        <Button
+          onClick={() => {
+            void q.refetch();
+            void auth.refresh();
+          }}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  const approved = q.data?.verification_status === "approved";
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-3xl font-bold">Supplier dashboard</h1>
-          <p className="text-muted-foreground mt-1">Manage products and orders.</p>
-        </div>
-        {!profile.is_active && <Badge variant="destructive">Account disabled</Badge>}
-      </div>
-
-      <Tabs defaultValue="products" className="mt-6">
-        <TabsList>
-          <TabsTrigger value="products">Products</TabsTrigger>
-          <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-        </TabsList>
-        <TabsContent value="products" className="mt-6"><ProductsTab disabled={!profile.is_active} /></TabsContent>
-        <TabsContent value="orders" className="mt-6"><OrdersTab /></TabsContent>
-        <TabsContent value="profile" className="mt-6"><ProfileTab /></TabsContent>
-      </Tabs>
+      <h1 className="text-3xl font-bold">Supplier dashboard</h1>
+      {!q.data ? (
+        <form
+          className="max-w-lg mt-6 space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            m.mutate();
+          }}
+        >
+          <h2 className="text-xl font-semibold">Business application</h2>
+          <div>
+            <Label htmlFor="business-name">Business name</Label>
+            <Input
+              id="business-name"
+              required
+              minLength={2}
+              maxLength={150}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="business-location">Business location</Label>
+            <Input
+              id="business-location"
+              required
+              minLength={2}
+              maxLength={500}
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Admin approval is required before listing materials or responding to quotes.
+          </p>
+          <Button disabled={m.isPending}>Submit application</Button>
+        </form>
+      ) : (
+        <>
+          <p className="mt-3">
+            {q.data.business_name} · {q.data.verification_status}
+          </p>
+          {!approved && (
+            <p className="mt-3 text-muted-foreground">
+              Publishing and quote responses are unavailable until approved.
+            </p>
+          )}
+          <Tabs defaultValue="products" className="mt-6">
+            <TabsList>
+              <TabsTrigger value="products">Products</TabsTrigger>
+              <TabsTrigger value="quotes">Quotes</TabsTrigger>
+              <TabsTrigger value="orders">Orders</TabsTrigger>
+            </TabsList>
+            <TabsContent value="products">
+              <Products approved={approved} />
+            </TabsContent>
+            <TabsContent value="quotes">
+              <QuoteList supplier approved={approved} />
+            </TabsContent>
+            <TabsContent value="orders">
+              <OrdersList />
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
     </div>
   );
 }
-
-function ProductsTab({ disabled }: { disabled: boolean }) {
+function Products({ approved }: { approved: boolean }) {
   const qc = useQueryClient();
-  const { data: products = [] } = useQuery({ queryKey: ["my-products"], queryFn: () => listMyProducts() });
-  const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => listCategories() });
-  const [editing, setEditing] = useState<any | null>(null);
+  const q = useQuery({ queryKey: ["my-products"], queryFn: listMyProducts });
+  const cats = useQuery({ queryKey: ["categories"], queryFn: listCategories });
+  const [editing, setEditing] = useState<Product | null>(null);
   const [open, setOpen] = useState(false);
-
-  const delMut = useMutation({
-    mutationFn: (id: string) => deleteProduct({ data: { id } }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["my-products"] }); toast.success("Deleted"); },
-    onError: (e: any) => toast.error(e.message),
+  const toggle = useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) =>
+      toggleProductActive({ data: { id, is_active: active } }),
+    onSuccess: () => void qc.invalidateQueries(),
+    onError: (e) => toast.error(friendlyError(e)),
   });
-
   return (
-    <div>
-      <div className="flex justify-end mb-4">
-        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
-          <DialogTrigger asChild>
-            <Button disabled={disabled} className="bg-accent text-accent-foreground hover:bg-accent/90"><Plus className="h-4 w-4 mr-1" /> Add product</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} product</DialogTitle></DialogHeader>
-            <ProductForm categories={categories} initial={editing} onDone={() => { setOpen(false); setEditing(null); qc.invalidateQueries({ queryKey: ["my-products"] }); }} />
-          </DialogContent>
-        </Dialog>
-      </div>
-      {products.length === 0 ? (
-        <EmptyState title="No products yet" description="Add your first product." />
+    <div className="mt-6">
+      <Button
+        disabled={!approved}
+        onClick={() => {
+          setEditing(null);
+          setOpen(true);
+        }}
+      >
+        Add product
+      </Button>
+      {open && (
+        <ProductForm
+          key={editing?.id ?? "new"}
+          initial={editing}
+          categories={cats.data || []}
+          done={() => {
+            setOpen(false);
+            void qc.invalidateQueries();
+          }}
+        />
+      )}
+      {q.isPending ? (
+        <p>Loading listings…</p>
+      ) : q.isError ? (
+        <p role="alert">Could not load listings.</p>
       ) : (
-        <div className="grid gap-3">
-          {products.map((p: any) => (
-            <Card key={p.id} className="p-4 flex items-center gap-4">
-              <div className="h-16 w-16 rounded-lg bg-muted overflow-hidden shrink-0">
-                {p.image_url && <img src={p.image_url} alt="" className="h-full w-full object-cover" />}
+        <div className="space-y-3 mt-4">
+          {!q.data.length && <p>No listings yet.</p>}
+          {q.data.map((p) => (
+            <Card key={p.id} className="p-4 flex flex-wrap gap-3 justify-between">
+              <div>
+                <h3 className="font-semibold">{p.name}</h3>
+                <p>
+                  {p.stock} {p.unit} · {p.is_active ? "Active" : "Archived"}
+                </p>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium">{p.name}</div>
-                <div className="text-sm text-muted-foreground">{formatGMD(Number(p.price))} / {p.unit} · {p.stock} in stock · {p.category_name || "Uncategorized"}</div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  disabled={!approved}
+                  onClick={() => {
+                    setEditing(p);
+                    setOpen(true);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!approved || toggle.isPending}
+                  onClick={() => toggle.mutate({ id: p.id, active: !p.is_active })}
+                >
+                  {p.is_active ? "Archive" : "Publish"}
+                </Button>
               </div>
-              <Button size="icon" variant="ghost" onClick={() => { setEditing(p); setOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-              <Button size="icon" variant="ghost" onClick={() => { if (confirm("Delete this product?")) delMut.mutate(p.id); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
             </Card>
           ))}
         </div>
@@ -107,142 +207,106 @@ function ProductsTab({ disabled }: { disabled: boolean }) {
     </div>
   );
 }
-
-function ProductForm({ categories, initial, onDone }: { categories: any[]; initial: any; onDone: () => void }) {
+function ProductForm({
+  initial,
+  categories,
+  done,
+}: {
+  initial: Product | null;
+  categories: { id: string; name: string }[];
+  done: () => void;
+}) {
   const [f, setF] = useState({
-    name: initial?.name || "",
-    description: initial?.description || "",
-    price: initial?.price?.toString() || "0",
-    unit: initial?.unit || "bag",
-    stock: initial?.stock?.toString() || "0",
-    image_url: initial?.image_url || "",
-    location: initial?.location || "",
-    category_id: initial?.category_id || "",
+    name: initial?.name ?? "",
+    description: initial?.description ?? "",
+    price: String(initial?.price ?? ""),
+    stock: String(initial?.stock ?? 0),
+    unit: initial?.unit ?? "bag",
+    location: initial?.location ?? "",
+    category_id: initial?.category_id ?? "",
+    image_url: initial?.image_url ?? "",
   });
-  const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u.user) throw new Error("Not authenticated");
-      const path = `${u.user.id}/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from("product-images").upload(path, file, { upsert: false });
-      if (error) throw error;
-      const { data } = supabase.storage.from("product-images").getPublicUrl(path);
-      setF((s) => ({ ...s, image_url: data.publicUrl }));
-      toast.success("Image uploaded");
-    } catch (err: any) { toast.error(err.message); }
-    finally { setUploading(false); }
-  }
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const payload = {
-        name: f.name, description: f.description || null,
-        price: Number(f.price), unit: f.unit, stock: parseInt(f.stock),
-        image_url: f.image_url || null, location: f.location || null,
+  const m = useMutation({
+    mutationFn: () => {
+      const data = {
+        ...f,
+        price: Number(f.price),
+        stock: Number(f.stock),
         category_id: f.category_id || null,
+        image_url: f.image_url || null,
       };
-      if (initial) await updateProduct({ data: { id: initial.id, ...payload } });
-      else await createProduct({ data: payload });
-      toast.success(initial ? "Updated" : "Product added");
-      onDone();
-    } catch (e: any) { toast.error(e.message); }
-    finally { setLoading(false); }
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-3">
-      <div><Label>Name</Label><Input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-      <div><Label>Description</Label><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></div>
-      <div className="grid grid-cols-3 gap-3">
-        <div><Label>Price (GMD)</Label><Input type="number" step="0.01" required value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></div>
-        <div><Label>Unit</Label><Input required value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} /></div>
-        <div><Label>Stock</Label><Input type="number" required value={f.stock} onChange={(e) => setF({ ...f, stock: e.target.value })} /></div>
-      </div>
-      <div>
-        <Label>Image</Label>
-        <Input type="file" accept="image/*" onChange={onFile} disabled={uploading} />
-        {f.image_url && <img src={f.image_url} alt="" className="mt-2 h-24 w-24 rounded object-cover" />}
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><Label>Location</Label><Input value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} /></div>
-        <div>
-          <Label>Category</Label>
-          <Select value={f.category_id} onValueChange={(v) => setF({ ...f, category_id: v })}>
-            <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
-            <SelectContent>{categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-      </div>
-      <Button type="submit" disabled={loading || uploading} className="w-full">{loading ? "Saving…" : "Save"}</Button>
-    </form>
-  );
-}
-
-function OrdersTab() {
-  const qc = useQueryClient();
-  const { data: orders = [] } = useQuery({ queryKey: ["supplier-orders"], queryFn: () => listSupplierOrders() });
-  const mut = useMutation({
-    mutationFn: (v: { id: string; status: OrderStatus }) => updateOrderStatus({ data: v }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["supplier-orders"] }); toast.success("Order updated"); },
-    onError: (e: any) => toast.error(e.message),
+      return initial
+        ? updateProduct({ data: { ...data, id: initial.id } })
+        : createProduct({ data });
+    },
+    onSuccess: () => {
+      toast.success("Product saved");
+      done();
+    },
+    onError: (e) => toast.error(friendlyError(e)),
   });
-  if (orders.length === 0) return <EmptyState title="No orders yet" />;
   return (
-    <div className="space-y-3">
-      {orders.map((o: any) => (
-        <Card key={o.id} className="p-5">
-          <div className="flex items-start justify-between flex-wrap gap-3">
-            <div>
-              <div className="text-sm text-muted-foreground">Order #{o.id.slice(0, 8)} · {o.buyer_name}</div>
-              <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString()}</div>
-            </div>
-            <OrderStatusBadge status={o.status} />
-          </div>
-          <div className="mt-3 text-sm space-y-1">
-            {o.items?.map((it: any) => <div key={it.id}>{it.quantity} × {it.product_name} — {formatGMD(Number(it.price) * it.quantity)}</div>)}
-          </div>
-          <div className="mt-2 text-xs text-muted-foreground">Deliver to: {o.delivery_address} · {o.phone}</div>
-          <div className="mt-3 flex gap-2 flex-wrap">
-            <Select value={o.status} onValueChange={(v) => mut.mutate({ id: o.id, status: v as OrderStatus })}>
-              <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {(["PENDING","CONFIRMED","DELIVERING","DELIVERED","CANCELED"] as OrderStatus[]).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </Card>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        m.mutate();
+      }}
+      className="max-w-2xl my-6 space-y-3 border-y py-5"
+    >
+      <h2 className="font-semibold">{initial ? "Edit product" : "New product"}</h2>
+      {(["name", "price", "stock", "unit", "location", "image_url"] as const).map((k) => (
+        <div key={k}>
+          <Label htmlFor={`product-${k}`}>
+            {
+              {
+                name: "Material name",
+                price: "Indicative unit price (GMD)",
+                stock: "Stock",
+                unit: "Unit",
+                location: "Location",
+                image_url: "Photo URL (HTTPS, optional)",
+              }[k]
+            }
+          </Label>
+          <Input
+            id={`product-${k}`}
+            type={k === "price" || k === "stock" ? "number" : k === "image_url" ? "url" : "text"}
+            min={k === "price" ? "0.01" : k === "stock" ? "0" : undefined}
+            step={k === "price" ? "0.01" : k === "stock" ? "1" : undefined}
+            maxLength={k === "image_url" ? 2000 : k === "location" ? 500 : 150}
+            required={["name", "price", "stock", "unit"].includes(k)}
+            value={f[k]}
+            onChange={(e) => setF({ ...f, [k]: e.target.value })}
+          />
+        </div>
       ))}
-    </div>
-  );
-}
-
-function ProfileTab() {
-  const { profile } = useAuth();
-  const [f, setF] = useState({ name: profile?.name || "", phone: profile?.phone || "", location: profile?.location || "" });
-  const [loading, setLoading] = useState(false);
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try { await updateMyProfile({ data: f }); toast.success("Profile updated"); }
-    catch (e: any) { toast.error(e.message); }
-    finally { setLoading(false); }
-  }
-  return (
-    <Card className="p-6 max-w-lg">
-      <form onSubmit={submit} className="space-y-3">
-        <div><Label>Name</Label><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-        <div><Label>Phone</Label><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
-        <div><Label>Location</Label><Input value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} /></div>
-        <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save changes"}</Button>
-      </form>
-    </Card>
+      <Label htmlFor="category">Category</Label>
+      <select
+        id="category"
+        className="w-full border rounded-md p-2 bg-background"
+        value={f.category_id}
+        onChange={(e) => setF({ ...f, category_id: e.target.value })}
+      >
+        <option value="">Uncategorized</option>
+        {categories.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      <Label htmlFor="description">Description</Label>
+      <Textarea
+        id="description"
+        maxLength={3000}
+        value={f.description}
+        onChange={(e) => setF({ ...f, description: e.target.value })}
+      />
+      <div className="flex gap-2">
+        <Button disabled={m.isPending}>Save product</Button>
+        <Button type="button" variant="outline" onClick={done}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
