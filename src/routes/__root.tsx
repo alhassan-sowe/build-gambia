@@ -11,7 +11,8 @@ import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { BottomNav } from "@/components/bottom-nav";
 import { Toaster } from "@/components/ui/sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { AuthProvider } from "@/lib/use-auth";
+import { Button } from "@/components/ui/button";
 
 function NotFoundComponent() {
   return (
@@ -33,8 +34,8 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold">Something went wrong</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{error instanceof Error ? error.message : String(error)}</p>
-        <button onClick={() => { router.invalidate(); reset(); }} className="mt-6 inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Try again</button>
+        <p className="mt-2 text-sm text-muted-foreground">Please try again.</p>
+        <Button onClick={() => { router.invalidate(); reset(); }} className="mt-6 inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Try again</Button>
       </div>
     </div>
   );
@@ -81,24 +82,16 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
 
-  useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
-      router.invalidate();
-      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [router, queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex min-h-screen flex-col">
+      <AuthProvider><div className="flex min-h-screen flex-col">
         <Navbar />
         <main className="flex-1 pb-16 md:pb-0"><Outlet /></main>
         <Footer />
         <BottomNav />
       </div>
-      <Toaster richColors position="top-center" />
+      <Toaster richColors position="top-center" /></AuthProvider>
     </QueryClientProvider>
   );
 }
