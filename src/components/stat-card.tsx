@@ -2,7 +2,11 @@ import type { LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 export function StatCard({
-  label, value, icon: Icon, hint, tone = "default",
+  label,
+  value,
+  icon: Icon,
+  hint,
+  tone = "default",
 }: {
   label: string;
   value: string | number;
@@ -21,7 +25,9 @@ export function StatCard({
     <Card className="p-4 md:p-5">
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+            {label}
+          </div>
           <div className="text-2xl md:text-3xl font-extrabold mt-1 tabular-nums">{value}</div>
           {hint && <div className="text-xs text-muted-foreground mt-1">{hint}</div>}
         </div>
