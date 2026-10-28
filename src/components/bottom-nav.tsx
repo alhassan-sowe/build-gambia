@@ -48,7 +48,7 @@ export function BottomNav() {
           return (
             <li key={it.label}>
               <Link
-                to={it.to as any}
+                to={it.to as never}
                 className={cn(
                   "flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition relative",
                   active

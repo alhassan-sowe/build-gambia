@@ -5,16 +5,12 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 
 export const supabaseConfigured = Boolean(url && key);
 
-export const supabase = createClient(
-  url ?? "http://localhost:54321",
-  key ?? "public-anon-key",
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      storage: typeof window !== "undefined" ? window.localStorage : undefined,
-    },
+export const supabase = createClient(url ?? "http://localhost:54321", key ?? "public-anon-key", {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    storage: typeof window !== "undefined" ? window.localStorage : undefined,
   },
-);
+});
 
 export type AppRole = "buyer" | "supplier" | "admin";

@@ -27,34 +27,76 @@ export function Footer() {
       <div className="container mx-auto px-4 py-10 grid gap-8 md:grid-cols-4">
         <div className="md:col-span-1">
           <div className="flex items-center gap-2 font-bold text-lg mb-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">E</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              E
+            </span>
             Envora
           </div>
-          <p className="text-sm opacity-80">The Gambia's direct construction materials marketplace.</p>
+          <p className="text-sm opacity-80">
+            The Gambia's direct construction materials marketplace.
+          </p>
         </div>
         <div>
           <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider opacity-70">Shop</h3>
           <ul className="space-y-2 text-sm opacity-90">
-            <li><Link to="/materials" className="hover:text-primary">All materials</Link></li>
-            <li><Link to="/materials" className="hover:text-primary">Cement & blocks</Link></li>
-            <li><Link to="/materials" className="hover:text-primary">Iron rods</Link></li>
-            <li><Link to="/materials" className="hover:text-primary">Transport</Link></li>
+            <li>
+              <Link to="/materials" className="hover:text-primary">
+                All materials
+              </Link>
+            </li>
+            <li>
+              <Link to="/materials" className="hover:text-primary">
+                Cement & blocks
+              </Link>
+            </li>
+            <li>
+              <Link to="/materials" className="hover:text-primary">
+                Iron rods
+              </Link>
+            </li>
+            <li>
+              <Link to="/materials" className="hover:text-primary">
+                Transport
+              </Link>
+            </li>
           </ul>
         </div>
         <div>
-          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider opacity-70">Company</h3>
+          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider opacity-70">
+            Company
+          </h3>
           <ul className="space-y-2 text-sm opacity-90">
-            <li><Link to="/auth" className="hover:text-primary">Sell on Envora</Link></li>
-            <li><Link to="/contact" className="hover:text-primary">Contact</Link></li>
-            <li><Link to="/contact" className="hover:text-primary">Help & FAQ</Link></li>
+            <li>
+              <Link to="/auth" className="hover:text-primary">
+                Sell on Envora
+              </Link>
+            </li>
+            <li>
+              <Link to="/contact" className="hover:text-primary">
+                Contact
+              </Link>
+            </li>
+            <li>
+              <Link to="/contact" className="hover:text-primary">
+                Help & FAQ
+              </Link>
+            </li>
           </ul>
         </div>
         <div>
-          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider opacity-70">Contact</h3>
+          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider opacity-70">
+            Contact
+          </h3>
           <ul className="space-y-2 text-sm opacity-90">
-            <li className="flex items-center gap-2"><Phone className="h-4 w-4" /> +220 000 0000</li>
-            <li className="flex items-center gap-2"><MessageCircle className="h-4 w-4" /> WhatsApp</li>
-            <li className="flex items-center gap-2"><Mail className="h-4 w-4" /> hello@envora.gm</li>
+            <li className="flex items-center gap-2">
+              <Phone className="h-4 w-4" /> +220 000 0000
+            </li>
+            <li className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4" /> WhatsApp
+            </li>
+            <li className="flex items-center gap-2">
+              <Mail className="h-4 w-4" /> hello@envora.gm
+            </li>
           </ul>
         </div>
       </div>

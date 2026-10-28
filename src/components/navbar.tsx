@@ -45,7 +45,7 @@ export function Navbar() {
 
   function onSearch(e: React.FormEvent) {
     e.preventDefault();
-    navigate({ to: "/materials", search: { search: q || undefined } as any });
+    navigate({ to: "/materials", search: { search: q || undefined } as never });
   }
 
   if (pathname === "/auth") return null;

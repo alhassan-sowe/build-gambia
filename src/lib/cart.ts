@@ -74,4 +74,8 @@ export function useCart() {
 }
 
 export const formatGMD = (n: number) =>
-  new Intl.NumberFormat("en-GM", { style: "currency", currency: "GMD", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-GM", {
+    style: "currency",
+    currency: "GMD",
+    maximumFractionDigits: 0,
+  }).format(n);

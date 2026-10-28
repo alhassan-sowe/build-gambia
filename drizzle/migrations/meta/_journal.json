@@ -8,6 +8,13 @@
       "when": 1793076619247,
       "tag": "0000_secure_quote_pilot",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793146411817,
+      "tag": "0001_profile_update_grant",
+      "breakpoints": true
     }
   ]
 }
