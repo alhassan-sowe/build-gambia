@@ -35,7 +35,7 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const categoryIcons: Record<string, any> = {
+const categoryIcons: Record<string, import("lucide-react").LucideIcon> = {
   cement: Package,
   sand: Layers,
   blocks: Boxes,

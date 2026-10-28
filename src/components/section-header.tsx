@@ -12,7 +12,7 @@ export function SectionHeader({
   title: string;
   subtitle?: string;
   viewAllTo?: string;
-  viewAllSearch?: Record<string, any>;
+  viewAllSearch?: Record<string, unknown>;
   action?: ReactNode;
 }) {
   return (
