@@ -24,8 +24,8 @@ export function SectionHeader({
       {action ??
         (viewAllTo && (
           <Link
-            to={viewAllTo as any}
-            search={viewAllSearch as any}
+            to={viewAllTo as never}
+            search={viewAllSearch as never}
             className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1 shrink-0"
           >
             View all <ArrowRight className="h-3.5 w-3.5" />

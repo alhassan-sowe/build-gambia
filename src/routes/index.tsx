@@ -67,7 +67,7 @@ function Index() {
 
   function onSearch(e: React.FormEvent) {
     e.preventDefault();
-    navigate({ to: "/materials", search: { search: q || undefined } as any });
+    navigate({ to: "/materials", search: { search: q || undefined } as never });
   }
 
   return (
@@ -116,7 +116,7 @@ function Index() {
                 <Link
                   key={t}
                   to="/materials"
-                  search={{ search: t } as any}
+                  search={{ search: t } as never}
                   className="rounded-full border border-white/20 px-3 py-1 hover:bg-card/10 transition"
                 >
                   {t}
@@ -137,13 +137,13 @@ function Index() {
           viewAllTo="/materials"
         />
         <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 md:grid md:grid-cols-7 md:gap-4 md:mx-0 md:px-0">
-          {categories.map((c: any) => {
+          {categories.map((c) => {
             const Icon = iconFor(c.name);
             return (
               <Link
                 key={c.id}
                 to="/materials"
-                search={{ category: c.id } as any}
+                search={{ category: c.id } as never}
                 className="shrink-0 md:shrink w-24 md:w-auto flex flex-col items-center gap-2 group"
               >
                 <div className="h-16 w-16 md:h-20 md:w-20 rounded-2xl bg-card border flex items-center justify-center text-primary group-hover:border-primary group-hover:shadow-md transition">
@@ -193,12 +193,12 @@ function Index() {
         ) : (
           <>
             <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 md:hidden">
-              {featured.map((p: any) => (
+              {featured.map((p) => (
                 <ProductCard key={p.id} product={p} variant="rail" />
               ))}
             </div>
             <div className="hidden md:grid grid-cols-3 lg:grid-cols-4 gap-4">
-              {featured.map((p: any) => (
+              {featured.map((p) => (
                 <ProductCard key={p.id} product={p} />
               ))}
             </div>

@@ -53,7 +53,7 @@ function Materials() {
       listProducts({ data: { categoryId: search.category, search: search.search || undefined } }),
   });
 
-  const sorted = [...products].sort((a: any, b: any) => {
+  const sorted = [...products].sort((a, b) => {
     if (sort === "price-asc") return Number(a.price) - Number(b.price);
     if (sort === "price-desc") return Number(b.price) - Number(a.price);
     return 0;
@@ -64,7 +64,7 @@ function Materials() {
     navigate({ search: { ...search, search: q || undefined } });
   }
 
-  const activeCat = categories.find((c: any) => c.id === search.category);
+  const activeCat = categories.find((c) => c.id === search.category);
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -168,7 +168,7 @@ function Materials() {
                     >
                       All categories
                     </button>
-                    {categories.map((c: any) => (
+                    {categories.map((c) => (
                       <button
                         key={c.id}
                         onClick={() => navigate({ search: { ...search, category: c.id } })}
@@ -201,7 +201,7 @@ function Materials() {
           >
             All
           </button>
-          {categories.map((c: any) => (
+          {categories.map((c) => (
             <button
               key={c.id}
               onClick={() => navigate({ search: { ...search, category: c.id } })}
@@ -241,13 +241,13 @@ function Materials() {
           />
         ) : view === "list" ? (
           <div className="grid gap-3 md:grid-cols-2">
-            {sorted.map((p: any) => (
+            {sorted.map((p) => (
               <ProductCard key={p.id} product={p} variant="list" />
             ))}
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            {sorted.map((p: any) => (
+            {sorted.map((p) => (
               <ProductCard key={p.id} product={p} />
             ))}
           </div>
